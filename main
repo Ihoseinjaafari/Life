@@ -1,22 +1,31 @@
 <?php
-session_start();
+// planner/index.php - نسخه کامل با Dark Mode و استایل هماهنگ
+$pageTitle = 'پلنر | سیستم مدیریت زندگی';
+require_once __DIR__ . '/../template/header.php';
+
+// ==================== ادامه کدهای قبلی planner ====================
 date_default_timezone_set('Asia/Tehran');
 
-$settingsFile = 'data/settings.json';
-$usersFile = 'data/users.json';
+// ==================== فایل‌های دیتا ====================
+$dataFile = __DIR__ . '/../data/tasks.json';
+$categoriesFile = __DIR__ . '/../data/categories.json';
+$projectsFile = __DIR__ . '/../data/projects.json';
+$usersFile = __DIR__ . '/../data/users.json';
+$settingsFile = __DIR__ . '/../data/settings.json';
 
-// ==================== توابع ====================
-function getSettings() {
-    global $settingsFile;
-    if (!file_exists($settingsFile)) {
-        $default = ['registration_enabled' => true];
-        file_put_contents($settingsFile, json_encode($default, JSON_PRETTY_PRINT));
-        return $default;
-    }
-    $settings = json_decode(file_get_contents($settingsFile), true);
-    return is_array($settings) ? $settings : ['registration_enabled' => true];
+// ایجاد فایل‌ها در صورت عدم وجود
+if (!file_exists($dataFile)) file_put_contents($dataFile, json_encode([]));
+if (!file_exists($categoriesFile)) {
+    file_put_contents($categoriesFile, json_encode(['کار شخصی', 'کار اداری', 'یادگیری', 'ورزش', 'خرید']));
+}
+if (!file_exists($projectsFile)) {
+    file_put_contents($projectsFile, json_encode([]));
+}
+if (!file_exists($settingsFile)) {
+    file_put_contents($settingsFile, json_encode(['registration_enabled' => true], JSON_PRETTY_PRINT));
 }
 
+// ==================== توابع ====================
 function getAllUsers() {
     global $usersFile;
     if (!file_exists($usersFile)) return [];
@@ -24,65 +33,221 @@ function getAllUsers() {
     return is_array($users) ? $users : [];
 }
 
-function getUserByEmail($email) {
-    $users = getAllUsers();
-    foreach ($users as $user) {
-        if ($user['email'] === $email) {
-            return $user;
-        }
-    }
-    return null;
+function getAllTasks() {
+    global $dataFile;
+    if (!file_exists($dataFile)) return [];
+    $tasks = json_decode(file_get_contents($dataFile), true);
+    return is_array($tasks) ? $tasks : [];
 }
 
-function getUserById($id) {
-    $users = getAllUsers();
-    foreach ($users as $user) {
-        if ($user['id'] == $id) {
-            return $user;
-        }
-    }
-    return null;
+function saveAllTasks($tasks) {
+    global $dataFile;
+    file_put_contents($dataFile, json_encode($tasks, JSON_PRETTY_PRINT));
 }
 
-function registerUser($name, $email, $password) {
-    $users = getAllUsers();
-    
-    $settings = getSettings();
-    if (!($settings['registration_enabled'] ?? true)) {
-        return ['success' => false, 'message' => 'ثبت‌نام جدید در حال حاضر غیرفعال است'];
+function getUserTasks($userId) {
+    $tasks = getAllTasks();
+    return array_values(array_filter($tasks, function($task) use ($userId) {
+        return ($task['user_id'] ?? '') == $userId;
+    }));
+}
+
+function getTaskChildren($taskId, $allTasks) {
+    return array_values(array_filter($allTasks, function($t) use ($taskId) {
+        return ($t['parent_id'] ?? '') == $taskId;
+    }));
+}
+
+function calculateTaskProgress($taskId, $allTasks) {
+    $children = getTaskChildren($taskId, $allTasks);
+    if (empty($children)) return null;
+    $total = count($children);
+    $done = count(array_filter($children, function($c) {
+        return $c['done'] == true;
+    }));
+    return ['total' => $total, 'done' => $done, 'percent' => round(($done / $total) * 100)];
+}
+
+function updateParentTaskStatus($taskId, $allTasks) {
+    $task = null;
+    foreach ($allTasks as $t) {
+        if ($t['id'] == $taskId) { $task = $t; break; }
     }
+    if (!$task || empty($task['parent_id'])) return $allTasks;
     
-    if (getUserByEmail($email)) {
-        return ['success' => false, 'message' => 'این ایمیل قبلاً ثبت شده است'];
+    $parentId = $task['parent_id'];
+    $progress = calculateTaskProgress($parentId, $allTasks);
+    
+    if ($progress !== null) {
+        foreach ($allTasks as &$t) {
+            if ($t['id'] == $parentId) {
+                $wasDone = $t['done'];
+                $newDone = ($progress['done'] == $progress['total']);
+                if ($newDone != $wasDone) {
+                    $t['done'] = $newDone;
+                    $t['completed_at'] = $newDone ? date('Y-m-d H:i:s') : null;
+                }
+                break;
+            }
+        }
+        $allTasks = updateParentTaskStatus($parentId, $allTasks);
     }
-    
-    $newId = time() . rand(100, 999);
-    $newUser = [
-        'id' => $newId,
-        'name' => htmlspecialchars(trim($name)),
-        'email' => htmlspecialchars(trim($email)),
-        'password' => password_hash($password, PASSWORD_DEFAULT),
+    return $allTasks;
+}
+
+function saveUserTask($userId, $task) {
+    $tasks = getAllTasks();
+    $task['user_id'] = $userId;
+    $tasks[] = $task;
+    saveAllTasks($tasks);
+    return $tasks;
+}
+
+function updateUserTask($userId, $taskId, $updatedData) {
+    $tasks = getAllTasks();
+    foreach ($tasks as &$task) {
+        if ($task['id'] == $taskId && ($task['user_id'] ?? '') == $userId) {
+            foreach ($updatedData as $key => $value) {
+                $task[$key] = $value;
+            }
+            break;
+        }
+    }
+    if (isset($updatedData['done'])) {
+        $tasks = updateParentTaskStatus($taskId, $tasks);
+    }
+    saveAllTasks($tasks);
+    return $tasks;
+}
+
+function deleteUserTask($userId, $taskId) {
+    $tasks = getAllTasks();
+    $tasks = array_values(array_filter($tasks, function($task) use ($userId, $taskId) {
+        return !($task['id'] == $taskId && ($task['user_id'] ?? '') == $userId);
+    }));
+    saveAllTasks($tasks);
+    return $tasks;
+}
+
+function deleteTaskWithChildren($userId, $taskId) {
+    $tasks = getAllTasks();
+    $toDelete = [$taskId];
+    $found = true;
+    while ($found) {
+        $found = false;
+        foreach ($tasks as $task) {
+            if (in_array($task['parent_id'] ?? '', $toDelete) && !in_array($task['id'], $toDelete) && ($task['user_id'] ?? '') == $userId) {
+                $toDelete[] = $task['id'];
+                $found = true;
+            }
+        }
+    }
+    $tasks = array_values(array_filter($tasks, function($t) use ($toDelete) {
+        return !in_array($t['id'], $toDelete);
+    }));
+    saveAllTasks($tasks);
+    return $tasks;
+}
+
+function reorderUserTasks($userId, $ids) {
+    $tasks = getAllTasks();
+    $newTasks = [];
+    foreach ($ids as $index => $id) {
+        foreach ($tasks as $task) {
+            if ($task['id'] == $id && ($task['user_id'] ?? '') == $userId) {
+                $task['order'] = $index;
+                $newTasks[] = $task;
+                break;
+            }
+        }
+    }
+    foreach ($tasks as $task) {
+        if (($task['user_id'] ?? '') != $userId) {
+            $newTasks[] = $task;
+        }
+    }
+    saveAllTasks($newTasks);
+    return $newTasks;
+}
+
+function getCategories() {
+    global $categoriesFile;
+    if (!file_exists($categoriesFile)) return [];
+    $cats = json_decode(file_get_contents($categoriesFile), true);
+    return is_array($cats) ? $cats : [];
+}
+
+function saveCategories($categories) {
+    global $categoriesFile;
+    file_put_contents($categoriesFile, json_encode($categories, JSON_PRETTY_PRINT));
+}
+
+function getUserProjects($userId) {
+    global $projectsFile;
+    if (!file_exists($projectsFile)) return [];
+    $allProjects = json_decode(file_get_contents($projectsFile), true);
+    if (!is_array($allProjects)) $allProjects = [];
+    return array_values(array_filter($allProjects, function($p) use ($userId) {
+        return ($p['user_id'] ?? '') == $userId;
+    }));
+}
+
+function saveUserProjects($userId, $projects) {
+    global $projectsFile;
+    $allProjects = json_decode(file_get_contents($projectsFile), true);
+    if (!is_array($allProjects)) $allProjects = [];
+    $allProjects = array_values(array_filter($allProjects, function($p) use ($userId) {
+        return ($p['user_id'] ?? '') != $userId;
+    }));
+    foreach ($projects as &$project) {
+        $project['user_id'] = $userId;
+    }
+    $allProjects = array_merge($allProjects, $projects);
+    file_put_contents($projectsFile, json_encode($allProjects, JSON_PRETTY_PRINT));
+}
+
+function addUserProject($userId, $projectName) {
+    $projects = getUserProjects($userId);
+    if (in_array($projectName, array_column($projects, 'name'))) return false;
+    $newProject = [
+        'name' => $projectName,
+        'description' => '',
         'created_at' => date('Y-m-d H:i:s'),
-        'avatar_color' => '#' . dechex(rand(0x000000, 0xFFFFFF))
+        'color' => '#' . dechex(rand(0x000000, 0xFFFFFF)),
+        'user_id' => $userId
     ];
-    
-    $users[] = $newUser;
-    file_put_contents($GLOBALS['usersFile'], json_encode($users, JSON_PRETTY_PRINT));
-    
-    return ['success' => true, 'user' => $newUser];
+    $projects[] = $newProject;
+    saveUserProjects($userId, $projects);
+    return true;
 }
 
-function loginUser($email, $password) {
-    $user = getUserByEmail($email);
-    if (!$user) {
-        return ['success' => false, 'message' => 'ایمیل یا رمز عبور اشتباه است'];
+function deleteUserProject($userId, $projectName) {
+    $projects = getUserProjects($userId);
+    $newProjects = array_values(array_filter($projects, function($p) use ($projectName) {
+        return $p['name'] != $projectName;
+    }));
+    saveUserProjects($userId, $newProjects);
+    $tasks = getAllTasks();
+    $changed = false;
+    foreach ($tasks as &$task) {
+        if (($task['user_id'] ?? '') == $userId && ($task['project'] ?? '') === $projectName) {
+            $task['project'] = '';
+            $changed = true;
+        }
     }
-    
-    if (!password_verify($password, $user['password'])) {
-        return ['success' => false, 'message' => 'ایمیل یا رمز عبور اشتباه است'];
+    if ($changed) saveAllTasks($tasks);
+    return true;
+}
+
+function updateUserProjectDescription($userId, $projectName, $description) {
+    $projects = getUserProjects($userId);
+    foreach ($projects as &$p) {
+        if ($p['name'] === $projectName) {
+            $p['description'] = $description;
+            break;
+        }
     }
-    
-    return ['success' => true, 'user' => $user];
+    saveUserProjects($userId, $projects);
 }
 
 // ==================== پردازش درخواست‌ها ====================
@@ -90,1058 +255,1578 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
     $action = $_POST['action'] ?? '';
     $response = ['success' => false];
+    $userId = $_SESSION['user_id'];
     
-    if ($action === 'register') {
-        $response = registerUser($_POST['name'] ?? '', $_POST['email'] ?? '', $_POST['password'] ?? '');
-        if ($response['success']) {
-            $_SESSION['user_id'] = $response['user']['id'];
-            $_SESSION['user_name'] = $response['user']['name'];
-            $_SESSION['user_email'] = $response['user']['email'];
-            unset($response['user']['password']);
-        }
-    }
-    elseif ($action === 'login') {
-        $response = loginUser($_POST['email'] ?? '', $_POST['password'] ?? '');
-        if ($response['success']) {
-            $_SESSION['user_id'] = $response['user']['id'];
-            $_SESSION['user_name'] = $response['user']['name'];
-            $_SESSION['user_email'] = $response['user']['email'];
-            unset($response['user']['password']);
-        }
-    }
-    elseif ($action === 'logout') {
+    if ($action === 'logout') {
         session_destroy();
         $response = ['success' => true];
     }
-    elseif ($action === 'check_session') {
-        if (isset($_SESSION['user_id'])) {
-            $user = getUserById($_SESSION['user_id']);
-            if ($user) {
-                $response = ['success' => true, 'user' => ['id' => $user['id'], 'name' => $user['name'], 'email' => $user['email'], 'avatar_color' => $user['avatar_color']]];
-            } else {
-                session_destroy();
-                $response = ['success' => false];
+    elseif ($action === 'change_password') {
+        $newPassword = $_POST['new_password'] ?? '';
+        if (strlen($newPassword) >= 4) {
+            $users = getAllUsers();
+            foreach ($users as &$user) {
+                if ($user['id'] == $userId) {
+                    $user['password'] = password_hash($newPassword, PASSWORD_DEFAULT);
+                    break;
+                }
             }
+            file_put_contents($usersFile, json_encode($users, JSON_PRETTY_PRINT));
+            $response = ['success' => true];
+        } else {
+            $response = ['success' => false, 'message' => 'رمز عبور باید حداقل ۴ کاراکتر باشد'];
+        }
+    }
+    elseif ($action === 'add') {
+        $tasks = getUserTasks($userId);
+        $newId = time() . rand(100, 999);
+        $newTask = [
+            'id' => $newId,
+            'user_id' => $userId,
+            'title' => htmlspecialchars(trim($_POST['title'] ?? '')),
+            'description' => htmlspecialchars(trim($_POST['description'] ?? '')),
+            'category' => $_POST['category'] ?? 'بدون دسته',
+            'project' => $_POST['project'] ?? '',
+            'date' => $_POST['date'] ?? date('Y-m-d'),
+            'time' => $_POST['time'] ?? '12:00',
+            'priority' => $_POST['priority'] ?? 'medium',
+            'order' => count($tasks),
+            'done' => false,
+            'parent_id' => $_POST['parent_id'] ?? '',
+            'created_at' => date('Y-m-d H:i:s'),
+            'completed_at' => null
+        ];
+        $allTasks = saveUserTask($userId, $newTask);
+        if (!empty($newTask['parent_id'])) {
+            $allTasks = updateParentTaskStatus($newTask['parent_id'], $allTasks);
+            saveAllTasks($allTasks);
+        }
+        $response = ['success' => true, 'tasks' => getUserTasks($userId)];
+    }
+    elseif ($action === 'toggle') {
+        $task = null;
+        $tasksList = getAllTasks();
+        foreach ($tasksList as $t) {
+            if ($t['id'] == $_POST['id'] && ($t['user_id'] ?? '') == $userId) {
+                $task = $t;
+                break;
+            }
+        }
+        $currentDone = $task ? $task['done'] : false;
+        $newDone = !$currentDone;
+        $completedAt = $newDone ? date('Y-m-d H:i:s') : null;
+        $allTasks = updateUserTask($userId, $_POST['id'], [
+            'done' => $newDone,
+            'completed_at' => $completedAt
+        ]);
+        $allTasks = updateParentTaskStatus($_POST['id'], $allTasks);
+        saveAllTasks($allTasks);
+        $response = ['success' => true, 'tasks' => getUserTasks($userId)];
+    }
+    elseif ($action === 'delete') {
+        $deleteChildren = isset($_POST['delete_children']) && $_POST['delete_children'] == 'true';
+        if ($deleteChildren) {
+            $allTasks = deleteTaskWithChildren($userId, $_POST['id']);
+        } else {
+            $allTasks = deleteUserTask($userId, $_POST['id']);
+        }
+        $response = ['success' => true, 'tasks' => getUserTasks($userId)];
+    }
+    elseif ($action === 'reorder') {
+        $ids = json_decode($_POST['ids'] ?? '[]', true);
+        $allTasks = reorderUserTasks($userId, $ids);
+        $response = ['success' => true, 'tasks' => getUserTasks($userId)];
+    }
+    elseif ($action === 'edit') {
+        $updateData = [];
+        if (isset($_POST['title'])) $updateData['title'] = htmlspecialchars(trim($_POST['title']));
+        if (isset($_POST['description'])) $updateData['description'] = htmlspecialchars(trim($_POST['description']));
+        if (isset($_POST['category'])) $updateData['category'] = $_POST['category'];
+        if (isset($_POST['project'])) $updateData['project'] = $_POST['project'];
+        if (isset($_POST['date'])) $updateData['date'] = $_POST['date'];
+        if (isset($_POST['time'])) $updateData['time'] = $_POST['time'];
+        if (isset($_POST['priority'])) $updateData['priority'] = $_POST['priority'];
+        if (isset($_POST['parent_id'])) $updateData['parent_id'] = $_POST['parent_id'];
+        $allTasks = updateUserTask($userId, $_POST['id'], $updateData);
+        saveAllTasks($allTasks);
+        $response = ['success' => true, 'tasks' => getUserTasks($userId)];
+    }
+    elseif ($action === 'load') {
+        $tasks = getUserTasks($userId);
+        $allTasks = getAllTasks();
+        foreach ($tasks as &$task) {
+            $progress = calculateTaskProgress($task['id'], $allTasks);
+            if ($progress !== null) {
+                $task['_progress'] = $progress;
+            }
+        }
+        $response = [
+            'success' => true,
+            'tasks' => $tasks,
+            'categories' => getCategories(),
+            'projects' => getUserProjects($userId),
+            'user' => getUserById($userId)
+        ];
+    }
+    elseif ($action === 'add_category') {
+        $categories = getCategories();
+        $newCategory = htmlspecialchars(trim($_POST['category'] ?? ''));
+        if ($newCategory && !in_array($newCategory, $categories)) {
+            $categories[] = $newCategory;
+            saveCategories($categories);
+        }
+        $response = ['success' => true, 'categories' => $categories];
+    }
+    elseif ($action === 'delete_category') {
+        $categoryToDelete = $_POST['category'] ?? '';
+        $categories = getCategories();
+        $categories = array_values(array_filter($categories, function($c) use ($categoryToDelete) {
+            return $c != $categoryToDelete;
+        }));
+        saveCategories($categories);
+        $response = ['success' => true, 'categories' => $categories];
+    }
+    elseif ($action === 'add_project') {
+        $newProject = htmlspecialchars(trim($_POST['project'] ?? ''));
+        if ($newProject) {
+            $success = addUserProject($userId, $newProject);
+            $response = ['success' => $success, 'projects' => getUserProjects($userId)];
+            if (!$success) $response['message'] = 'این پروژه قبلاً وجود دارد';
+        } else {
+            $response = ['success' => false, 'message' => 'لطفاً نام پروژه را وارد کنید'];
+        }
+    }
+    elseif ($action === 'delete_project') {
+        $projectToDelete = $_POST['project'] ?? '';
+        if ($projectToDelete) {
+            deleteUserProject($userId, $projectToDelete);
+            $response = ['success' => true, 'projects' => getUserProjects($userId)];
         } else {
             $response = ['success' => false];
         }
+    }
+    elseif ($action === 'update_project_description') {
+        $name = $_POST['name'] ?? '';
+        $description = $_POST['description'] ?? '';
+        if ($name) {
+            updateUserProjectDescription($userId, $name, $description);
+            $response = ['success' => true, 'projects' => getUserProjects($userId)];
+        } else {
+            $response = ['success' => false];
+        }
+    }
+    elseif ($action === 'export_csv') {
+        $tasks = getUserTasks($userId);
+        $csv = "عنوان,توضیحات,دسته‌بندی,پروژه,تاریخ,زمان,اولویت,تسک مادر,وضعیت,تاریخ انجام,پیشرفت\n";
+        foreach ($tasks as $task) {
+            $status = $task['done'] ? 'انجام شده' : 'در انتظار';
+            $completedAt = $task['completed_at'] ? date('Y-m-d H:i', strtotime($task['completed_at'])) : '';
+            $parentTitle = '';
+            foreach ($tasks as $p) {
+                if ($p['id'] == ($task['parent_id'] ?? '')) {
+                    $parentTitle = $p['title'];
+                    break;
+                }
+            }
+            $allTasks = getAllTasks();
+            $progress = calculateTaskProgress($task['id'], $allTasks);
+            $progressText = $progress !== null ? "{$progress['done']}/{$progress['total']} ({$progress['percent']}%)" : '—';
+            $csv .= '"' . str_replace('"', '""', $task['title']) . '",';
+            $csv .= '"' . str_replace('"', '""', $task['description'] ?? '') . '",';
+            $csv .= '"' . $task['category'] . '",';
+            $csv .= '"' . ($task['project'] ?? '') . '",';
+            $csv .= '"' . $task['date'] . '",';
+            $csv .= '"' . $task['time'] . '",';
+            $csv .= '"' . $task['priority'] . '",';
+            $csv .= '"' . $parentTitle . '",';
+            $csv .= '"' . $status . '",';
+            $csv .= '"' . $completedAt . '",';
+            $csv .= '"' . $progressText . "\"\n";
+        }
+        $response = ['success' => true, 'data' => $csv];
     }
     
     echo json_encode($response);
     exit;
 }
 
-$isLoggedIn = isset($_SESSION['user_id']);
-$currentUser = $isLoggedIn ? getUserById($_SESSION['user_id']) : null;
-$registrationEnabled = getSettings()['registration_enabled'] ?? true;
-$currentPage = basename($_SERVER['PHP_SELF']);
-$currentDir = basename(dirname($_SERVER['PHP_SELF']));
+$currentDate = date('Y-m-d');
+$todayTehran = date('Y-m-d');
+$tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
+$userId = $_SESSION['user_id'];
+$currentUser = getUserById($userId);
 ?>
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>سیستم مدیریت زندگی | پلن</title>
-    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: 'Vazirmatn', 'Vazir', 'Tahoma', sans-serif !important;
-            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+
+<!-- ===== محتوای اصلی پلنر با استایل هماهنگ ===== -->
+<style>
+    /* ===== هماهنگ با اتاق جنگ و صفحه اصلی ===== */
+    .planner-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    .planner-header {
+        background: rgba(255,255,255,0.05);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 20px 30px;
+        margin-bottom: 25px;
+        border: 1px solid rgba(255,255,255,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    
+    .planner-header h1 {
+        font-size: 24px;
+        font-weight: 700;
+        color: white;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .planner-header h1 i {
+        color: #667eea;
+    }
+    
+    .planner-header .subtitle {
+        color: rgba(255,255,255,0.5);
+        font-size: 14px;
+    }
+    
+    .planner-header .header-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    
+    .planner-header .header-actions .btn-back {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        border: 1px solid rgba(255,255,255,0.15);
+        padding: 8px 18px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 14px;
+        font-family: inherit;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s;
+    }
+    
+    .planner-header .header-actions .btn-back:hover {
+        background: rgba(255,255,255,0.2);
+    }
+    
+    .planner-header .header-actions .btn-add-task {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: inherit;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .planner-header .header-actions .btn-add-task:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* ===== فیلترها ===== */
+    .planner-filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 20px;
+        background: rgba(255,255,255,0.03);
+        border-radius: 14px;
+        padding: 10px 16px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+    
+    .planner-filters .filter-btn {
+        padding: 6px 16px;
+        cursor: pointer;
+        border-radius: 20px;
+        border: none;
+        background: rgba(255,255,255,0.05);
+        font-size: 13px;
+        transition: all 0.3s;
+        color: rgba(255,255,255,0.6);
+        font-family: inherit;
+    }
+    
+    .planner-filters .filter-btn:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+    }
+    
+    .planner-filters .filter-btn.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+    }
+    
+    .planner-filters .filter-divider {
+        width: 1px;
+        height: 30px;
+        background: rgba(255,255,255,0.08);
+    }
+    
+    /* ===== آمار ===== */
+    .planner-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+    
+    .planner-stats .stat-card {
+        background: rgba(255,255,255,0.05);
+        border-radius: 16px;
+        padding: 18px 20px;
+        border: 1px solid rgba(255,255,255,0.08);
+        text-align: center;
+    }
+    
+    .planner-stats .stat-card .number {
+        font-size: 28px;
+        font-weight: 700;
+        color: white;
+    }
+    
+    .planner-stats .stat-card .label {
+        font-size: 13px;
+        color: rgba(255,255,255,0.5);
+        margin-top: 4px;
+    }
+    
+    /* ===== لیست تسک‌ها ===== */
+    .planner-tasks {
+        background: rgba(255,255,255,0.03);
+        border-radius: 20px;
+        padding: 20px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+    
+    .planner-tasks .view-toggle {
+        display: flex;
+        gap: 6px;
+        background: rgba(255,255,255,0.05);
+        padding: 4px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        width: fit-content;
+    }
+    
+    .planner-tasks .view-toggle button {
+        border: none;
+        background: none;
+        padding: 6px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-family: inherit;
+        color: rgba(255,255,255,0.5);
+        transition: all 0.3s;
+    }
+    
+    .planner-tasks .view-toggle button.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+    }
+    
+    .planner-tasks .view-toggle button:hover:not(.active) {
+        background: rgba(255,255,255,0.05);
+        color: white;
+    }
+    
+    .planner-tasks .drag-info {
+        color: rgba(255,255,255,0.3);
+        font-size: 13px;
+        text-align: center;
+        padding: 10px;
+        border: 1px dashed rgba(255,255,255,0.08);
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    
+    /* ===== کارت تسک ===== */
+    .task-card {
+        background: rgba(255,255,255,0.05);
+        border-radius: 16px;
+        padding: 18px 20px;
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.3s ease;
+        position: relative;
+        cursor: grab;
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 16px;
+    }
+    
+    .task-card:last-child {
+        margin-bottom: 0;
+    }
+    
+    .task-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(255,255,255,0.2);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+    
+    .task-card .task-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .task-card .task-check {
+        margin-top: 2px;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #667eea;
+        flex-shrink: 0;
+    }
+    
+    .task-card .task-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: white;
+        flex: 1;
+        word-break: break-word;
+    }
+    
+    .task-card .task-title.done {
+        text-decoration: line-through;
+        opacity: 0.5;
+    }
+    
+    .task-card .task-title a {
+        color: white;
+        text-decoration: none;
+    }
+    
+    .task-card .task-title a:hover {
+        color: #667eea;
+    }
+    
+    .task-card .task-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 8px 0 10px 32px;
+    }
+    
+    .task-card .task-meta .tag {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .task-card .task-meta .tag.time {
+        background: rgba(102,126,234,0.15);
+        color: #667eea;
+    }
+    
+    .task-card .task-meta .tag.category {
+        background: rgba(245,87,108,0.15);
+        color: #f5576c;
+    }
+    
+    .task-card .task-meta .tag.project {
+        background: rgba(67,233,123,0.15);
+        color: #43e97b;
+    }
+    
+    .task-card .task-meta .tag.priority-high {
+        background: rgba(220,53,69,0.2);
+        color: #ff6b6b;
+    }
+    
+    .task-card .task-meta .tag.priority-medium {
+        background: rgba(255,193,7,0.2);
+        color: #ffc107;
+    }
+    
+    .task-card .task-meta .tag.priority-low {
+        background: rgba(40,167,69,0.2);
+        color: #28a745;
+    }
+    
+    .task-card .task-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        justify-content: flex-end;
+    }
+    
+    .task-card .task-actions button {
+        background: none;
+        border: none;
+        padding: 4px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-family: inherit;
+        transition: all 0.3s;
+        color: rgba(255,255,255,0.5);
+    }
+    
+    .task-card .task-actions .edit-btn:hover {
+        background: rgba(102,126,234,0.15);
+        color: #667eea;
+    }
+    
+    .task-card .task-actions .delete-btn:hover {
+        background: rgba(220,53,69,0.15);
+        color: #ff6b6b;
+    }
+    
+    /* ===== لیست تسک‌ها ===== */
+    .task-list-item {
+        background: rgba(255,255,255,0.05);
+        border-radius: 12px;
+        padding: 12px 16px;
+        border: 1px solid rgba(255,255,255,0.06);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+        transition: all 0.3s;
+        cursor: grab;
+    }
+    
+    .task-list-item:hover {
+        border-color: rgba(255,255,255,0.15);
+    }
+    
+    .task-list-item .task-check {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: #667eea;
+        flex-shrink: 0;
+    }
+    
+    .task-list-item .task-title {
+        font-size: 14px;
+        color: white;
+        flex: 1;
+    }
+    
+    .task-list-item .task-title.done {
+        text-decoration: line-through;
+        opacity: 0.5;
+    }
+    
+    .task-list-item .task-title a {
+        color: white;
+        text-decoration: none;
+    }
+    
+    .task-list-item .task-title a:hover {
+        color: #667eea;
+    }
+    
+    .task-list-item .task-meta {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    
+    .task-list-item .task-meta .tag {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+    
+    .task-list-item .task-actions {
+        display: flex;
+        gap: 4px;
+    }
+    
+    .task-list-item .task-actions button {
+        background: none;
+        border: none;
+        padding: 4px 6px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: rgba(255,255,255,0.3);
+        transition: all 0.3s;
+    }
+    
+    .task-list-item .task-actions .edit-btn:hover {
+        color: #667eea;
+    }
+    
+    .task-list-item .task-actions .delete-btn:hover {
+        color: #ff6b6b;
+    }
+    
+    /* ===== خالی ===== */
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: rgba(255,255,255,0.3);
+    }
+    
+    .empty-state .icon {
+        font-size: 48px;
+        color: rgba(255,255,255,0.05);
+        margin-bottom: 16px;
+        display: block;
+    }
+    
+    /* ===== ریسپانسیو ===== */
+    @media (max-width: 768px) {
+        .planner-header {
+            flex-direction: column;
+            align-items: stretch;
         }
-        
-        .main-container {
-            max-width: 1200px;
+        .planner-header .header-actions {
+            flex-direction: column;
+        }
+        .planner-header .header-actions button,
+        .planner-header .header-actions a {
             width: 100%;
-        }
-        
-        .header {
-            text-align: center;
-            padding: 30px 0 40px;
-        }
-        
-        .header h1 {
-            font-size: 42px;
-            font-weight: 700;
-            color: white;
-            text-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
-        }
-        
-        .header h1 span {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
-        
-        .header p {
-            color: rgba(255,255,255,0.6);
-            font-size: 18px;
-            margin-top: 10px;
-        }
-        
-        /* ===== دکمه منو ===== */
-        .menu-toggle-btn {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1001;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            color: white;
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
-            cursor: pointer;
-            font-size: 22px;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
             justify-content: center;
-            backdrop-filter: blur(10px);
         }
-        
-        .menu-toggle-btn:hover {
-            background: rgba(255,255,255,0.2);
-            transform: scale(1.05);
+        .planner-filters {
+            flex-direction: column;
+            align-items: stretch;
         }
-        
-        .menu-toggle-btn .fa-times { display: none; }
-        .menu-toggle-btn.active .fa-bars { display: none; }
-        .menu-toggle-btn.active .fa-times { display: block; }
-        
-        /* ===== اوورلی منو ===== */
-        .side-menu-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 999;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
-        
-        .side-menu-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-        
-        /* ===== منوی کناری ===== */
-        .side-menu {
-            position: fixed;
-            top: 0;
-            right: -320px;
-            width: 320px;
-            height: 100vh;
-            background: rgba(20, 20, 40, 0.95);
-            backdrop-filter: blur(20px);
-            z-index: 1000;
-            padding: 20px 0;
-            transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow-y: auto;
-            border-left: 1px solid rgba(255,255,255,0.05);
-            box-shadow: -10px 0 40px rgba(0,0,0,0.3);
-        }
-        
-        .side-menu.open {
-            right: 0;
-        }
-        
-        .side-menu-header {
-            padding: 15px 20px 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .side-menu-header .logo-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            color: white;
-        }
-        
-        .side-menu-header .logo-text {
-            color: white;
-            font-size: 18px;
-            font-weight: 700;
-        }
-        
-        .side-menu-header .logo-text span {
-            color: #667eea;
-        }
-        
-        .user-info-side {
-            padding: 20px;
-            background: rgba(255,255,255,0.03);
-            margin: 10px 15px 15px;
-            border-radius: 16px;
-            border: 1px solid rgba(255,255,255,0.05);
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-        
-        .user-info-side .avatar {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            font-weight: 700;
-            color: white;
-            flex-shrink: 0;
-        }
-        
-        .user-info-side .details .name {
-            color: white;
-            font-size: 15px;
-            font-weight: 600;
-        }
-        
-        .user-info-side .details .email {
-            color: rgba(255,255,255,0.5);
-            font-size: 12px;
-        }
-        
-        .user-info-side .logout-btn-side {
-            margin-right: auto;
-            background: rgba(220,53,69,0.2);
-            border: none;
-            color: #dc3545;
-            padding: 6px 14px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 12px;
-            font-family: inherit;
-            transition: all 0.3s;
-        }
-        
-        .user-info-side .logout-btn-side:hover {
-            background: rgba(220,53,69,0.3);
-        }
-        
-        .menu-items {
-            padding: 5px 10px;
-        }
-        
-        .menu-item {
-            margin-bottom: 2px;
-        }
-        
-        .menu-item > a {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 12px 16px;
-            border-radius: 12px;
-            color: rgba(255,255,255,0.7);
-            text-decoration: none;
-            transition: all 0.25s ease;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            position: relative;
-        }
-        
-        .menu-item > a:hover {
-            background: rgba(255,255,255,0.06);
-            color: white;
-        }
-        
-        .menu-item > a.active {
-            background: rgba(102, 126, 234, 0.15);
-            color: #667eea;
-        }
-        
-        .menu-item > a .icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            flex-shrink: 0;
-        }
-        
-        .menu-item > a .icon.home { background: rgba(102,126,234,0.2); color: #667eea; }
-        .menu-item > a .icon.planner { background: rgba(102,126,234,0.2); color: #667eea; }
-        .menu-item > a .icon.lifeplan { background: rgba(245,87,108,0.2); color: #f5576c; }
-        .menu-item > a .icon.warroom { background: rgba(245,87,108,0.2); color: #f5576c; }
-        .menu-item > a .icon.meaning { background: rgba(79,172,254,0.2); color: #4facfe; }
-        .menu-item > a .icon.managers { background: rgba(67,233,123,0.2); color: #43e97b; }
-        .menu-item > a .icon.inspection { background: rgba(250,112,154,0.2); color: #fa709a; }
-        .menu-item > a .icon.nottodo { background: rgba(168,192,255,0.2); color: #a8c0ff; }
-        .menu-item > a .icon.habits { background: rgba(245,158,11,0.2); color: #f59e0b; }
-        .menu-item > a .icon.admin { background: rgba(220,53,69,0.2); color: #dc3545; }
-        
-        .menu-item > a .badge {
-            margin-right: auto;
-            font-size: 10px;
-            padding: 2px 10px;
-            border-radius: 20px;
-            background: rgba(40,167,69,0.2);
-            color: #28a745;
-        }
-        
-        .menu-item > a .badge-soon {
-            background: rgba(255,193,7,0.2);
-            color: #ffc107;
-        }
-        
-        .menu-footer {
-            padding: 15px 20px;
-            border-top: 1px solid rgba(255,255,255,0.05);
-            margin-top: 10px;
-        }
-        
-        .menu-footer .version {
-            font-size: 11px;
-            color: rgba(255,255,255,0.2);
-            text-align: center;
-        }
-        
-        .main-content {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .side-menu::-webkit-scrollbar {
-            width: 3px;
-        }
-        
-        .side-menu::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        
-        .side-menu::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-        }
-        
-        .auth-wrapper {
-            max-width: 450px;
-            margin: 0 auto 40px;
-        }
-        
-        .auth-card {
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 24px;
-            padding: 35px 30px;
-        }
-        
-        .auth-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 25px;
-            border-bottom: 2px solid rgba(255,255,255,0.1);
-        }
-        
-        .auth-tab {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            background: none;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-            color: rgba(255,255,255,0.5);
-            font-weight: 500;
-            font-family: inherit;
-        }
-        
-        .auth-tab.active {
-            color: #667eea;
-            border-bottom: 2px solid #667eea;
-            margin-bottom: -2px;
-        }
-        
-        .auth-form { display: none; }
-        .auth-form.active { display: block; }
-        
-        .auth-form input {
-            width: 100%;
-            padding: 14px;
-            margin-bottom: 15px;
-            border: 2px solid rgba(255,255,255,0.1);
-            border-radius: 15px;
-            font-size: 14px;
-            transition: all 0.3s;
-            background: rgba(255,255,255,0.05);
-            color: white;
-            font-family: inherit;
-        }
-        
-        .auth-form input::placeholder { color: rgba(255,255,255,0.4); }
-        
-        .auth-form input:focus {
-            outline: none;
-            border-color: #667eea;
-            background: rgba(255,255,255,0.08);
-        }
-        
-        .auth-btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-            border-radius: 15px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-family: inherit;
-        }
-        
-        .auth-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        .auth-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-        
-        .error-msg {
-            background: rgba(220,53,69,0.2);
-            color: #ff6b6b;
-            padding: 12px;
-            border-radius: 12px;
-            margin-bottom: 15px;
-            font-size: 13px;
+        .planner-filters .filter-divider {
             display: none;
-            border: 1px solid rgba(220,53,69,0.3);
         }
-        
-        .disabled-msg {
-            background: rgba(255,193,7,0.15);
-            color: #ffc107;
-            padding: 12px;
-            border-radius: 12px;
-            margin-bottom: 15px;
-            font-size: 13px;
-            border: 1px solid rgba(255,193,7,0.2);
-            text-align: center;
+        .planner-stats {
+            grid-template-columns: 1fr 1fr;
         }
-        
-        /* ===== منوی اصلی ===== */
-        .main-menu {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 25px;
-            margin-top: 30px;
+        .task-list-item {
+            flex-wrap: wrap;
         }
-        
-        .menu-card {
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 24px;
-            padding: 30px 25px;
-            text-align: center;
-            transition: all 0.4s ease;
-            cursor: pointer;
-            text-decoration: none;
-            color: white;
-            position: relative;
-            overflow: hidden;
+        .task-list-item .task-meta {
+            width: 100%;
         }
-        
-        .menu-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1));
-            opacity: 0;
-            transition: opacity 0.4s ease;
-        }
-        
-        .menu-card:hover::before { opacity: 1; }
-        
-        .menu-card:hover {
-            transform: translateY(-8px);
-            border-color: rgba(102,126,234,0.5);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-        }
-        
-        .menu-card .icon {
-            width: 64px;
-            height: 64px;
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 15px;
-            font-size: 28px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .menu-card .icon.planner { background: linear-gradient(135deg, #667eea, #764ba2); }
-        .menu-card .icon.lifeplan { background: linear-gradient(135deg, #f093fb, #f5576c); }
-        .menu-card .icon.warroom { background: linear-gradient(135deg, #f5576c, #f093fb); }
-        .menu-card .icon.meaning { background: linear-gradient(135deg, #4facfe, #00f2fe); }
-        .menu-card .icon.managers { background: linear-gradient(135deg, #43e97b, #38f9d7); }
-        .menu-card .icon.inspection { background: linear-gradient(135deg, #fa709a, #fee140); }
-        .menu-card .icon.nottodo { background: linear-gradient(135deg, #a8c0ff, #3f2b96); }
-        
-        .menu-card h3 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 6px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .menu-card p {
-            font-size: 13px;
-            color: rgba(255,255,255,0.6);
-            position: relative;
-            z-index: 1;
-        }
-        
-        .menu-card .badge {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            background: rgba(255,255,255,0.1);
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 10px;
-            color: rgba(255,255,255,0.5);
-        }
-        
-        .menu-card .coming-soon {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(255,193,7,0.2);
-            color: #ffc107;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 10px;
-            font-weight: 600;
-        }
-        
-        .menu-card .active-badge {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(40,167,69,0.2);
-            color: #28a745;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 10px;
-            font-weight: 600;
-        }
-        
-        .menu-card.disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-        
-        .user-status {
-            text-align: center;
-            color: rgba(255,255,255,0.5);
-            font-size: 14px;
-            margin-top: 25px;
-            padding-bottom: 10px;
-        }
-        
-        .user-status .user-name {
-            color: white;
-            font-weight: 500;
-        }
-        
-        .logout-link {
-            color: #dc3545 !important;
-            cursor: pointer;
-            background: none;
-            border: none;
-            font-family: inherit;
-            font-size: 14px;
-            text-decoration: underline;
-        }
-        
-        .logout-link:hover { color: #ff6b6b !important; }
-        
-        .user-avatar-mini {
-            display: inline-block;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: #667eea;
-            color: white;
-            text-align: center;
-            line-height: 32px;
-            font-weight: bold;
-            font-size: 14px;
-            margin-left: 8px;
-            vertical-align: middle;
-        }
-        
-        @media (max-width: 992px) {
-            .main-menu {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 20px;
-            }
-        }
-        
-        @media (max-width: 768px) {
-            .header h1 { font-size: 32px; }
-            .main-menu {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 15px;
-            }
-            .menu-card { padding: 20px 15px; }
-            .menu-card .icon { width: 50px; height: 50px; font-size: 22px; }
-            .menu-card h3 { font-size: 15px; }
-            .menu-card p { font-size: 12px; }
-            .side-menu { width: 280px; }
-        }
-        
-        @media (max-width: 480px) {
-            .main-menu {
-                grid-template-columns: 1fr;
-                gap: 12px;
-            }
-            .header h1 { font-size: 28px; }
-            .side-menu { width: 100%; right: -100%; }
-        }
-    </style>
-</head>
-<body>
-    <!-- ===== دکمه باز کردن منو ===== -->
-    <button class="menu-toggle-btn" id="menuToggleBtn" onclick="toggleSideMenu()">
-        <i class="fas fa-bars"></i>
-        <i class="fas fa-times"></i>
-    </button>
+    }
     
-    <!-- ===== اوورلی منو ===== -->
-    <div class="side-menu-overlay" id="sideMenuOverlay" onclick="closeSideMenu()"></div>
-    
-    <!-- ===== منوی کناری ===== -->
-    <div class="side-menu" id="sideMenu">
-        <div class="side-menu-header">
-            <div class="logo-icon"><i class="fas fa-rocket"></i></div>
-            <div class="logo-text">سیستم <span>زندگی</span></div>
+    @media (max-width: 480px) {
+        .planner-stats {
+            grid-template-columns: 1fr;
+        }
+        .planner-header h1 {
+            font-size: 20px;
+        }
+    }
+</style>
+
+<div class="planner-container">
+    <!-- ===== هدر ===== -->
+    <div class="planner-header">
+        <div>
+            <h1><i class="fas fa-tasks"></i> پلنر</h1>
+            <div class="subtitle">مدیریت تسک‌ها و برنامه‌ریزی روزانه</div>
         </div>
-        
-        <?php if ($isLoggedIn && $currentUser): ?>
-            <div class="user-info-side">
-                <div class="avatar" style="background: <?php echo $currentUser['avatar_color'] ?? '#667eea'; ?>">
-                    <?php echo mb_substr($currentUser['name'], 0, 1); ?>
-                </div>
-                <div class="details">
-                    <div class="name"><?php echo htmlspecialchars($currentUser['name']); ?></div>
-                    <div class="email"><?php echo htmlspecialchars($currentUser['email']); ?></div>
-                </div>
-                <button class="logout-btn-side" onclick="logout()"><i class="fas fa-sign-out-alt"></i></button>
-            </div>
-        <?php else: ?>
-            <div class="user-info-side" style="justify-content:center;">
-                <div style="color:rgba(255,255,255,0.5); font-size:13px;"><i class="fas fa-user"></i> وارد شوید</div>
-            </div>
-        <?php endif; ?>
-        
-        <div class="menu-items">
-            <!-- صفحه اصلی -->
-            <div class="menu-item">
-                <a href="index.php" class="menu-item-link <?php echo ($currentDir === 'root' || $currentDir === '') ? 'active' : ''; ?>">
-                    <span class="icon home"><i class="fas fa-home"></i></span>
-                    <span>🏠 صفحه اصلی</span>
-                </a>
-            </div>
-            
-            <!-- Planner -->
-            <div class="menu-item">
-                <a href="planner/index.php" class="menu-item-link <?php echo ($currentDir === 'planner') ? 'active' : ''; ?>">
-                    <span class="icon planner"><i class="fas fa-tasks"></i></span>
-                    <span>📋 Planner</span>
-                    <span class="badge">فعال</span>
-                </a>
-            </div>
-            
-            <!-- Lifeplan -->
-            <div class="menu-item">
-                <a href="lifeplan/index.php" class="menu-item-link <?php echo ($currentDir === 'lifeplan') ? 'active' : ''; ?>">
-                    <span class="icon lifeplan"><i class="fas fa-compass"></i></span>
-                    <span>🧭 Lifeplan</span>
-                    <span class="badge">فعال</span>
-                </a>
-            </div>
-            
-            <!-- War Room -->
-            <div class="menu-item">
-                <a href="wr/index.php" class="menu-item-link <?php echo ($currentDir === 'wr') ? 'active' : ''; ?>">
-                    <span class="icon warroom"><i class="fas fa-bullseye"></i></span>
-                    <span>⚔️ اتاق جنگ</span>
-                    <span class="badge">فعال</span>
-                </a>
-            </div>
-            
-            <!-- Meaning -->
-            <div class="menu-item">
-                <a href="meaning/index.php" class="menu-item-link">
-                    <span class="icon meaning"><i class="fas fa-brain"></i></span>
-                    <span>💡 Meaning</span>
-                    <span class="badge badge-soon">به زودی</span>
-                </a>
-            </div>
-            
-            <!-- Middle Managers -->
-            <div class="menu-item">
-                <a href="middlemanagers/index.php" class="menu-item-link">
-                    <span class="icon managers"><i class="fas fa-users-cog"></i></span>
-                    <span>👔 Middle Managers</span>
-                    <span class="badge badge-soon">به زودی</span>
-                </a>
-            </div>
-            
-            <!-- Inspection -->
-            <div class="menu-item">
-                <a href="inspection/index.php" class="menu-item-link">
-                    <span class="icon inspection"><i class="fas fa-search"></i></span>
-                    <span>🔍 Inspection</span>
-                    <span class="badge badge-soon">به زودی</span>
-                </a>
-            </div>
-            
-            <!-- Not To Do List -->
-            <div class="menu-item">
-                <a href="nottodolist/index.php" class="menu-item-link">
-                    <span class="icon nottodo"><i class="fas fa-ban"></i></span>
-                    <span>🚫 Not To Do List</span>
-                    <span class="badge badge-soon">به زودی</span>
-                </a>
-            </div>
-            
-            <!-- Habits -->
-            <div class="menu-item">
-                <a href="planner/habits.php" class="menu-item-link <?php echo ($currentDir === 'planner' && $currentPage === 'habits.php') ? 'active' : ''; ?>">
-                    <span class="icon habits"><i class="fas fa-fire"></i></span>
-                    <span>🔥 عادت‌ها</span>
-                    <span class="badge">فعال</span>
-                </a>
-            </div>
-            
-            <!-- Notes -->
-            <div class="menu-item">
-                <a href="notes.php" class="menu-item-link <?php echo ($currentPage === 'notes.php') ? 'active' : ''; ?>">
-                    <span class="icon" style="background:rgba(255,193,7,0.2); color:#ffc107;"><i class="fas fa-sticky-note"></i></span>
-                    <span>📝 نوت‌ها</span>
-                    <span class="badge">فعال</span>
-                </a>
-            </div>
-            
-            <!-- Admin (فقط ادمین) -->
-            <?php if ($currentUser && $currentUser['email'] === 'admin@example.com'): ?>
-                <div class="menu-item">
-                    <a href="planner/admin.php" class="menu-item-link <?php echo ($currentDir === 'planner' && $currentPage === 'admin.php') ? 'active' : ''; ?>">
-                        <span class="icon admin"><i class="fas fa-shield-alt"></i></span>
-                        <span>🛡️ مدیریت</span>
-                    </a>
-                </div>
-            <?php endif; ?>
-        </div>
-        
-        <div class="menu-footer">
-            <div class="version">نسخه 1.0 | سیستم مدیریت زندگی</div>
+        <div class="header-actions">
+            <a href="../index.php" class="btn-back"><i class="fas fa-home"></i> صفحه اصلی</a>
+            <a href="../wr/index.php" class="btn-back"><i class="fas fa-bullseye"></i> اتاق جنگ</a>
+            <button class="btn-add-task" id="openAddTaskBtn"><i class="fas fa-plus"></i> تسک جدید</button>
         </div>
     </div>
     
-    <!-- ===== محتوای اصلی ===== -->
-    <div class="main-content">
-        <div class="header">
-            <h1>🚀 <span>سیستم مدیریت زندگی</span></h1>
-            <p>همه ابزارهای مدیریت زندگی در یک مکان</p>
+    <!-- ===== فیلترها ===== -->
+    <div class="planner-filters" id="filterContainer">
+        <button class="filter-btn active" data-filter="today">📅 امروز</button>
+        <button class="filter-btn" data-filter="tomorrow">⭐ فردا</button>
+        <button class="filter-btn" data-filter="upcoming">📆 آینده</button>
+        <button class="filter-btn" data-filter="past">⏪ گذشته</button>
+        <button class="filter-btn" data-filter="completed">✅ انجام شده</button>
+        <button class="filter-btn" data-filter="all">📋 همه</button>
+        
+        <div class="filter-divider"></div>
+        
+        <button class="filter-btn" id="openProjectModalBtn" style="background:rgba(45,106,79,0.2); color:#2d6a4f;">📁 پروژه‌ها</button>
+        <button class="filter-btn" id="openCategoryModalBtn" style="background:rgba(111,66,193,0.2); color:#8b5cf6;">🏷️ دسته‌ها</button>
+        <button class="filter-btn" id="exportCsvBtn" style="background:rgba(40,167,69,0.2); color:#28a745;">📊 CSV</button>
+    </div>
+    
+    <!-- ===== آمار ===== -->
+    <div class="planner-stats" id="statsContainer"></div>
+    
+    <!-- ===== تسک‌ها ===== -->
+    <div class="planner-tasks">
+        <div class="view-toggle">
+            <button class="active" id="gridViewBtn"><i class="fas fa-th-large"></i> کارتی</button>
+            <button id="listViewBtn"><i class="fas fa-list"></i> لیستی</button>
         </div>
         
-        <?php if ($isLoggedIn && $currentUser): ?>
-            <div class="user-status">
-                <span class="user-avatar-mini" style="background: <?php echo $currentUser['avatar_color'] ?? '#667eea'; ?>">
-                    <?php echo mb_substr($currentUser['name'], 0, 1); ?>
-                </span>
-                <span>خوش آمدی، <span class="user-name"><?php echo htmlspecialchars($currentUser['name']); ?></span></span>
-                <span style="margin: 0 10px;">|</span>
-                <button class="logout-link" onclick="logout()">خروج</button>
+        <div class="drag-info">
+            <i class="fas fa-arrows-alt"></i> برای تغییر اولویت، تسک‌ها را بکشید و جابجا کنید
+        </div>
+        
+        <div id="tasksContainer"></div>
+    </div>
+</div>
+
+<!-- ===== مودال‌ها ===== -->
+<div id="addTaskModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header"><i class="fas fa-plus-circle"></i> افزودن تسک جدید</div>
+        <div class="modal-body">
+            <input type="text" id="addTitle" placeholder="عنوان تسک..." required>
+            <select id="addCategory"></select>
+            <select id="addProject"><option value="">بدون پروژه</option></select>
+            <input type="date" id="addDate" value="<?php echo $currentDate; ?>">
+            <input type="text" id="addTime" class="time-input" placeholder="ساعت" value="12:00" maxlength="5">
+            <select id="addPriority">
+                <option value="high">🔴 اولویت بالا</option>
+                <option value="medium" selected>🟡 اولویت متوسط</option>
+                <option value="low">🟢 اولویت پایین</option>
+            </select>
+            <textarea id="addDescription" placeholder="توضیحات (اختیاری)" rows="3"></textarea>
+            <div style="margin-top:10px; padding:10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
+                <label style="display:block; margin-bottom:8px; font-weight:bold; color:rgba(255,255,255,0.6);">زیرتسک برای کار مادر</label>
+                <select id="addParentTask"><option value="">بدون والد (تسک اصلی)</option></select>
             </div>
-            
-            <div class="main-menu">
-                <!-- Planner -->
-                <a href="planner/index.php" class="menu-card">
-                    <div class="active-badge">فعال</div>
-                    <div class="icon planner"><i class="fas fa-tasks"></i></div>
-                    <h3>📋 Planner</h3>
-                    <p>برنامه‌ریزی روزانه، مدیریت تسک‌ها و پروژه‌ها</p>
-                </a>
-                
-                <!-- Lifeplan -->
-                <a href="lifeplan/index.php" class="menu-card">
-                    <div class="active-badge">فعال</div>
-                    <div class="icon lifeplan"><i class="fas fa-compass"></i></div>
-                    <h3>🧭 Lifeplan</h3>
-                    <p>برنامه‌ریزی اهداف بلندمدت و مسیر زندگی</p>
-                </a>
-                
-                <!-- War Room -->
-                <a href="wr/index.php" class="menu-card">
-                    <div class="active-badge">فعال</div>
-                    <div class="icon warroom"><i class="fas fa-bullseye"></i></div>
-                    <h3>⚔️ اتاق جنگ</h3>
-                    <p>مدیریت استراتژیک اهداف و ماموریت‌های بزرگ</p>
-                </a>
-                
-                <!-- Meaning -->
-                <a href="meaning/index.php" class="menu-card disabled">
-                    <div class="coming-soon">به زودی</div>
-                    <div class="icon meaning"><i class="fas fa-brain"></i></div>
-                    <h3>💡 Meaning</h3>
-                    <p>پیدا کردن معنا و هدف در زندگی</p>
-                </a>
-                
-                <!-- Middle Managers -->
-                <a href="middlemanagers/index.php" class="menu-card disabled">
-                    <div class="coming-soon">به زودی</div>
-                    <div class="icon managers"><i class="fas fa-users-cog"></i></div>
-                    <h3>👔 Middle Managers</h3>
-                    <p>ابزارهای مدیریت میانی و تیم‌سازی</p>
-                </a>
-                
-                <!-- Inspection -->
-                <a href="inspection/index.php" class="menu-card disabled">
-                    <div class="coming-soon">به زودی</div>
-                    <div class="icon inspection"><i class="fas fa-search"></i></div>
-                    <h3>🔍 Inspection</h3>
-                    <p>بازرسی و ارزیابی عملکرد</p>
-                </a>
-                
-                <!-- Not To Do List -->
-                <a href="nottodolist/index.php" class="menu-card disabled">
-                    <div class="coming-soon">به زودی</div>
-                    <div class="icon nottodo"><i class="fas fa-ban"></i></div>
-                    <h3>🚫 Not To Do List</h3>
-                    <p>لیست کارهایی که نباید انجام داد</p>
-                </a>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeAddTaskModal()">انصراف</button>
+            <button class="btn-save" id="saveAddTaskBtn">افزودن</button>
+        </div>
+    </div>
+</div>
+
+<div id="editModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header"><i class="fas fa-edit"></i> ویرایش تسک</div>
+        <div class="modal-body">
+            <input type="text" id="editTitle" placeholder="عنوان تسک">
+            <select id="editCategory"></select>
+            <select id="editProject"><option value="">بدون پروژه</option></select>
+            <input type="date" id="editDate">
+            <input type="text" id="editTime" class="time-input" placeholder="ساعت" maxlength="5">
+            <select id="editPriority">
+                <option value="high">🔴 بالا</option>
+                <option value="medium">🟡 متوسط</option>
+                <option value="low">🟢 پایین</option>
+            </select>
+            <textarea id="editDescription" placeholder="توضیحات" rows="3"></textarea>
+            <div style="margin-top:10px; padding:10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
+                <label style="display:block; margin-bottom:8px; font-weight:bold; color:rgba(255,255,255,0.6);">زیرتسک برای کار مادر</label>
+                <select id="editParentTask"><option value="">بدون والد (تسک اصلی)</option></select>
             </div>
-            
-        <?php else: ?>
-            <div class="auth-wrapper">
-                <div class="auth-card">
-                    <div class="auth-tabs">
-                        <button class="auth-tab active" data-tab="login">ورود</button>
-                        <button class="auth-tab" data-tab="register">ثبت‌نام</button>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeEditModal()">انصراف</button>
+            <button class="btn-save" onclick="saveEdit()">ذخیره</button>
+        </div>
+    </div>
+</div>
+
+<div id="projectModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header"><i class="fas fa-project-diagram"></i> مدیریت پروژه‌ها</div>
+        <div class="modal-body">
+            <div id="projectList"></div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <input type="text" id="newProjectName" placeholder="نام پروژه جدید" style="flex:1; padding:10px 14px; border:1px solid rgba(255,255,255,0.1); border-radius:10px; font-size:14px; background:rgba(255,255,255,0.05); color:white;">
+                <button class="btn-save" id="addProjectBtn" style="flex:0;">افزودن</button>
+            </div>
+            <div style="margin-top:15px; padding:10px; background:rgba(255,255,255,0.03); border-radius:10px; font-size:12px; color:rgba(255,255,255,0.3); border:1px solid rgba(255,255,255,0.06);">
+                <i class="fas fa-info-circle"></i> برای مشاهده صفحه اختصاصی هر پروژه، روی نام آن کلیک کنید
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeProjectModal()">بستن</button>
+        </div>
+    </div>
+</div>
+
+<div id="categoryModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header"><i class="fas fa-tags"></i> مدیریت دسته‌بندی</div>
+        <div class="modal-body">
+            <div id="categoryList"></div>
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <input type="text" id="newCategoryName" placeholder="نام دسته جدید" style="flex:1; padding:10px 14px; border:1px solid rgba(255,255,255,0.1); border-radius:10px; font-size:14px; background:rgba(255,255,255,0.05); color:white;">
+                <button class="btn-save" id="addCategoryBtn" style="flex:0;">افزودن</button>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeCategoryModal()">بستن</button>
+        </div>
+    </div>
+</div>
+
+<div id="projectPageModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:700px;">
+        <div class="modal-header"><i class="fas fa-project-diagram"></i> <span id="projectPageTitle"></span></div>
+        <div class="modal-body">
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; font-weight:bold; color:rgba(255,255,255,0.6);">توضیحات پروژه:</label>
+                <div id="projectPageDesc" style="background:rgba(255,255,255,0.03); padding:15px; border-radius:12px; min-height:80px; white-space:pre-wrap; border:1px solid rgba(255,255,255,0.06); color:rgba(255,255,255,0.6);"></div>
+                <button id="editProjectDescBtn" class="btn-back" style="margin-top:10px; background:rgba(102,126,234,0.2); color:#667eea; border:1px solid rgba(102,126,234,0.15); padding:6px 16px; border-radius:8px; cursor:pointer; font-size:13px; font-family:inherit; transition:all 0.3s;"><i class="fas fa-edit"></i> ویرایش توضیحات</button>
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; font-weight:bold; color:rgba(255,255,255,0.6);">آمار پروژه:</label>
+                <div id="projectPageStats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px;"></div>
+            </div>
+            <div>
+                <label style="display:block; margin-bottom:8px; font-weight:bold; color:rgba(255,255,255,0.6);">تسک‌های پروژه:</label>
+                <div id="projectPageTasks" style="max-height:350px; overflow-y:auto;"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeProjectPageModal()">بستن</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const SERVER_TODAY = document.getElementById('serverToday').value;
+const SERVER_TOMORROW = document.getElementById('serverTomorrow').value;
+
+let tasks = [];
+let categories = [];
+let projects = [];
+let currentFilter = 'today';
+let currentEditId = null;
+let sortableInstances = {};
+let filters = { priority: '', category: '', project: '' };
+let currentView = localStorage.getItem('taskViewPlanner') || 'grid';
+let currentProjectPage = null;
+
+// ===== توابع کمکی =====
+function toPersianNumbers(str) {
+    if (!str) return '';
+    const digits = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+    return String(str).replace(/[0-9]/g, d => digits[parseInt(d)]);
+}
+
+function validateTime(timeStr) {
+    return /^([0-1][0-9]|2[0-3]):([0-5][0-9])$/.test(timeStr);
+}
+
+function formatTimeToPersian(timeStr) {
+    if (!timeStr) return '⏰ --:--';
+    if (!validateTime(timeStr)) return '⏰ ۱۲:۰۰';
+    const [h, m] = timeStr.split(':');
+    return `${toPersianNumbers(h)}:${toPersianNumbers(m)}`;
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '';
+    let d = new Date(dateStr);
+    if (dateStr === SERVER_TODAY) {
+        return toPersianNumbers(d.toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+    }
+    return toPersianNumbers(d.toLocaleDateString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric' }));
+}
+
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return '';
+    let d = new Date(dateTimeStr);
+    let date = formatDate(d.toISOString().split('T')[0]);
+    let time = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    return `${date} ساعت ${time}`;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    let div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function isToday(dateStr) { return dateStr === SERVER_TODAY; }
+function isTomorrow(dateStr) { return dateStr === SERVER_TOMORROW; }
+function isPast(dateStr) { return dateStr < SERVER_TODAY; }
+function isUpcoming(dateStr) { return dateStr > SERVER_TODAY && dateStr !== SERVER_TOMORROW; }
+
+function getTaskChildren(taskId) {
+    return tasks.filter(t => t.parent_id == taskId);
+}
+
+function getTaskProgress(taskId) {
+    let children = getTaskChildren(taskId);
+    if (children.length === 0) return null;
+    let total = children.length;
+    let done = children.filter(t => t.done).length;
+    return { total, done, percent: Math.round((done / total) * 100) };
+}
+
+function updateParentSelects() {
+    let options = '<option value="">بدون والد (تسک اصلی)</option>';
+    let sortedTasks = [...tasks].sort((a, b) => (a.order || 0) - (b.order || 0));
+    sortedTasks.filter(t => !t.parent_id || t.parent_id === '').forEach(task => {
+        options += `<option value="${task.id}">${escapeHtml(task.title)}</option>`;
+    });
+    document.getElementById('addParentTask').innerHTML = options;
+    document.getElementById('editParentTask').innerHTML = options;
+}
+
+// ===== خروج =====
+function logout() {
+    if (confirm('آیا از خروج مطمئن هستید؟')) {
+        let formData = new FormData();
+        formData.append('action', 'logout');
+        fetch(window.location.href, { method: 'POST', body: formData }).then(() => {
+            location.href = '../index.php';
+        });
+    }
+}
+
+// ===== خروجی CSV =====
+async function exportCSV() {
+    let formData = new FormData();
+    formData.append('action', 'export_csv');
+    try {
+        let response = await fetch(window.location.href, { method: 'POST', body: formData });
+        let result = await response.json();
+        if (result.success) {
+            let blob = new Blob(["\uFEFF" + result.data], { type: 'text/csv;charset=utf-8;' });
+            let url = URL.createObjectURL(blob);
+            let a = document.createElement('a');
+            a.href = url;
+            a.download = `tasks_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else {
+            alert('خطا در ایجاد خروجی CSV');
+        }
+    } catch(e) {
+        alert('خطا در ارتباط با سرور');
+    }
+}
+
+// ===== توابع دیتا =====
+async function loadData() {
+    try {
+        let formData = new FormData();
+        formData.append('action', 'load');
+        let response = await fetch(window.location.href, { method: 'POST', body: formData });
+        let result = await response.json();
+        if (result.success) {
+            tasks = result.tasks || [];
+            categories = result.categories || [];
+            projects = result.projects || [];
+            updateSelects();
+            updateParentSelects();
+            renderAll();
+        }
+    } catch(e) {
+        console.error(e);
+    }
+}
+
+async function sendRequest(action, data = {}) {
+    try {
+        let formData = new FormData();
+        formData.append('action', action);
+        for (let key in data) {
+            formData.append(key, data[key]);
+        }
+        let response = await fetch(window.location.href, { method: 'POST', body: formData });
+        let result = await response.json();
+        if (result.success) {
+            if (result.tasks) {
+                tasks = result.tasks;
+                updateParentSelects();
+            }
+            if (result.categories) {
+                categories = result.categories;
+                updateSelects();
+                if (document.getElementById('categoryModal').style.display === 'block') refreshCategoryList();
+            }
+            if (result.projects) {
+                projects = result.projects;
+                updateSelects();
+                if (document.getElementById('projectModal').style.display === 'block') refreshProjectList();
+            }
+            renderAll();
+        }
+        return result;
+    } catch(e) {
+        console.error(e);
+        return { success: false };
+    }
+}
+
+function updateSelects() {
+    let categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    let projectOptions = projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    document.getElementById('addCategory').innerHTML = categoryOptions;
+    document.getElementById('addProject').innerHTML = '<option value="">بدون پروژه</option>' + projectOptions;
+    document.getElementById('editCategory').innerHTML = categoryOptions;
+    document.getElementById('editProject').innerHTML = '<option value="">بدون پروژه</option>' + projectOptions;
+}
+
+function refreshCategoryList() {
+    let container = document.getElementById('categoryList');
+    if (!categories || categories.length === 0) {
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:rgba(255,255,255,0.3);">هیچ دسته‌بندی تعریف نشده است</div>';
+    } else {
+        container.innerHTML = categories.map(cat => `<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06);"><span style="color:white;">${cat}</span><button onclick="deleteCategory('${cat}')" style="background:rgba(220,53,69,0.15); color:#ff6b6b; padding:4px 10px; border:none; border-radius:6px; cursor:pointer;">🗑️</button></div>`).join('');
+    }
+}
+
+function refreshProjectList() {
+    let container = document.getElementById('projectList');
+    if (!projects || projects.length === 0) {
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:rgba(255,255,255,0.3);">هیچ پروژه‌ای تعریف نشده است</div>';
+    } else {
+        container.innerHTML = projects.map(proj => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+                <a onclick="openProjectPage('${encodeURIComponent(proj.name)}')" style="cursor:pointer; color:white; text-decoration:none; display:flex; align-items:center; gap:8px;">
+                    <i class="fas fa-project-diagram" style="color: ${proj.color || '#2d6a4f'}"></i> ${escapeHtml(proj.name)}
+                </a>
+                <button onclick="deleteProject('${proj.name}')" style="background:rgba(220,53,69,0.15); color:#ff6b6b; padding:4px 10px; border:none; border-radius:6px; cursor:pointer;">🗑️</button>
+            </div>
+        `).join('');
+    }
+}
+
+// ===== فیلتر و رندر =====
+function getFilteredTasks() {
+    let filtered = [...tasks];
+    
+    if (currentFilter === 'completed') {
+        filtered = filtered.filter(t => t.done === true);
+        if (filters.priority) filtered = filtered.filter(t => t.priority === filters.priority);
+        if (filters.category) filtered = filtered.filter(t => t.category === filters.category);
+        if (filters.project) filtered = filtered.filter(t => t.project === filters.project);
+    } else {
+        switch(currentFilter) {
+            case 'today': filtered = filtered.filter(t => isToday(t.date) && !t.done); break;
+            case 'tomorrow': filtered = filtered.filter(t => isTomorrow(t.date) && !t.done); break;
+            case 'upcoming': filtered = filtered.filter(t => isUpcoming(t.date) && !t.done); break;
+            case 'past': filtered = filtered.filter(t => isPast(t.date) && !t.done); break;
+            case 'all': break;
+        }
+    }
+    
+    filtered.sort((a, b) => (a.order || 0) - (b.order || 0));
+    return filtered;
+}
+
+function groupByDate(tasksList) {
+    let groups = {};
+    tasksList.forEach(task => {
+        if (!groups[task.date]) groups[task.date] = [];
+        groups[task.date].push(task);
+    });
+    return groups;
+}
+
+function updateStats() {
+    let total = tasks.length;
+    let completed = tasks.filter(t => t.done).length;
+    let todayTasks = tasks.filter(t => isToday(t.date) && !t.done).length;
+    let upcoming = tasks.filter(t => !isPast(t.date) && !t.done && !isToday(t.date)).length;
+    let parentTasks = tasks.filter(t => !t.parent_id || t.parent_id === '').length;
+    let subtasks = tasks.filter(t => t.parent_id && t.parent_id !== '').length;
+    
+    let tasksWithProgress = tasks.filter(t => getTaskChildren(t.id).length > 0);
+    let avgProgress = 0;
+    if (tasksWithProgress.length > 0) {
+        let totalProgress = tasksWithProgress.reduce((sum, t) => {
+            let p = getTaskProgress(t.id);
+            return sum + (p ? p.percent : 0);
+        }, 0);
+        avgProgress = Math.round(totalProgress / tasksWithProgress.length);
+    }
+    
+    document.getElementById('statsContainer').innerHTML = `
+        <div class="stat-card"><div class="number">${toPersianNumbers(total)}</div><div class="label">کل تسک‌ها</div></div>
+        <div class="stat-card"><div class="number">${toPersianNumbers(completed)}</div><div class="label">انجام شده</div></div>
+        <div class="stat-card"><div class="number">${toPersianNumbers(todayTasks)}</div><div class="label">امروز</div></div>
+        <div class="stat-card"><div class="number">${toPersianNumbers(upcoming)}</div><div class="label">آینده</div></div>
+        <div class="stat-card"><div class="number">${toPersianNumbers(parentTasks)}</div><div class="label">تسک‌های اصلی</div></div>
+        <div class="stat-card"><div class="number">${toPersianNumbers(subtasks)}</div><div class="label">زیرتسک‌ها</div></div>
+        ${tasksWithProgress.length > 0 ? `<div class="stat-card"><div class="number">${toPersianNumbers(avgProgress)}%</div><div class="label">میانگین پیشرفت</div></div>` : ''}
+    `;
+}
+
+function autoFormatTime(input) {
+    let value = input.value.replace(/[^0-9]/g, '');
+    if (value.length >= 3) {
+        let hours = value.substring(0, 2);
+        let minutes = value.substring(2, 4);
+        if (parseInt(hours) > 23) hours = '23';
+        if (parseInt(minutes) > 59) minutes = '59';
+        input.value = hours + ':' + minutes;
+    } else if (value.length === 2) {
+        input.value = value + ':';
+    } else {
+        input.value = value;
+    }
+}
+
+function setView(view) {
+    currentView = view;
+    localStorage.setItem('taskViewPlanner', view);
+    document.getElementById('gridViewBtn').classList.toggle('active', view === 'grid');
+    document.getElementById('listViewBtn').classList.toggle('active', view === 'list');
+    renderTasks();
+}
+
+function renderProgressBar(taskId) {
+    let progress = getTaskProgress(taskId);
+    if (!progress) return '';
+    return `
+        <div style="margin:8px 0; background:rgba(255,255,255,0.05); border-radius:20px; height:4px; overflow:hidden; padding-right:32px;">
+            <div style="height:100%; background:linear-gradient(90deg, #667eea, #764ba2); border-radius:20px; transition:width 0.5s; width:${progress.percent}%;"></div>
+        </div>
+        <div style="font-size:11px; color:rgba(255,255,255,0.3); margin-top:3px; display:flex; justify-content:space-between; padding-right:32px;">
+            <span>پیشرفت</span>
+            <span>${toPersianNumbers(progress.done)} از ${toPersianNumbers(progress.total)} (${toPersianNumbers(progress.percent)}%)</span>
+        </div>
+    `;
+}
+
+function renderSubtasks(taskId) {
+    let children = tasks.filter(t => t.parent_id == taskId);
+    if (children.length === 0) return '';
+    return `
+        <div style="margin-top:10px; padding:10px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border-right:3px solid #667eea; margin-right:32px;">
+            <div style="font-size:12px; font-weight:bold; margin-bottom:6px; color:#667eea;">
+                <i class="fas fa-sitemap"></i> زیرتسک‌ها (${children.length})
+            </div>
+            ${children.map(child => `
+                <div style="display:flex; align-items:center; gap:10px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+                    <input type="checkbox" ${child.done ? 'checked' : ''} onchange="toggleTask('${child.id}')" style="width:16px; height:16px; cursor:pointer; accent-color:#667eea; flex-shrink:0;">
+                    <span style="flex:1; font-size:13px; color:rgba(255,255,255,0.6); ${child.done ? 'text-decoration:line-through; opacity:0.5;' : ''}">${escapeHtml(child.title)}</span>
+                    <button onclick="openEditModal('${child.id}')" style="background:none; border:none; color:rgba(255,255,255,0.2); cursor:pointer;"><i class="fas fa-edit"></i></button>
+                </div>
+            `).join('')}
+            <button onclick="openAddSubtaskModal('${taskId}')" style="margin-top:6px; background:none; border:none; color:#667eea; cursor:pointer; font-size:12px; font-family:inherit;">
+                <i class="fas fa-plus"></i> افزودن زیرتسک
+            </button>
+        </div>
+    `;
+}
+
+function renderGridTasks(tasksList) {
+    let mainTasks = tasksList.filter(t => !t.parent_id || t.parent_id === '');
+    if (mainTasks.length === 0) {
+        return `<div class="empty-state"><span class="icon"><i class="fas fa-inbox"></i></span>هیچ تسک اصلی یافت نشد</div>`;
+    }
+    return mainTasks.map(task => {
+        let progress = getTaskProgress(task.id);
+        let isCompleted = task.done;
+        return `
+            <div class="task-card ${isCompleted ? 'completed' : ''}" data-id="${task.id}">
+                <div class="task-header">
+                    <input type="checkbox" class="task-check" ${isCompleted ? 'checked' : ''} onchange="toggleTask('${task.id}')">
+                    <div class="task-title ${isCompleted ? 'done' : ''}">
+                        <a href="task_detail.php?id=${task.id}">${escapeHtml(task.title)}</a>
+                        <span style="font-size:11px; background:rgba(102,126,234,0.15); color:#667eea; padding:2px 8px; border-radius:12px; margin-right:6px;"><i class="fas fa-sitemap"></i> ${getTaskChildren(task.id).length}</span>
                     </div>
-                    
-                    <div id="errorMsg" class="error-msg"></div>
-                    
-                    <?php if (!$registrationEnabled): ?>
-                        <div class="disabled-msg">
-                            <i class="fas fa-exclamation-triangle"></i> ثبت‌نام جدید در حال حاضر غیرفعال است
-                        </div>
-                    <?php endif; ?>
-                    
-                    <form id="loginForm" class="auth-form active" onsubmit="return false;">
-                        <input type="email" id="loginEmail" placeholder="ایمیل" required>
-                        <input type="password" id="loginPassword" placeholder="رمز عبور" required>
-                        <button type="submit" class="auth-btn" id="loginBtn">ورود</button>
-                    </form>
-                    
-                    <form id="registerForm" class="auth-form" onsubmit="return false;">
-                        <input type="text" id="registerName" placeholder="نام کامل" required <?php echo !$registrationEnabled ? 'disabled' : ''; ?>>
-                        <input type="email" id="registerEmail" placeholder="ایمیل" required <?php echo !$registrationEnabled ? 'disabled' : ''; ?>>
-                        <input type="password" id="registerPassword" placeholder="رمز عبور" required <?php echo !$registrationEnabled ? 'disabled' : ''; ?>>
-                        <input type="password" id="registerConfirmPassword" placeholder="تکرار رمز عبور" required <?php echo !$registrationEnabled ? 'disabled' : ''; ?>>
-                        <button type="submit" class="auth-btn" id="registerBtn" <?php echo !$registrationEnabled ? 'disabled' : ''; ?>>
-                            <?php echo $registrationEnabled ? 'ثبت‌نام' : 'ثبت‌نام غیرفعال'; ?>
-                        </button>
-                    </form>
+                </div>
+                ${task.description ? `<div style="font-size:13px; color:rgba(255,255,255,0.5); margin:6px 0 10px 32px; padding:6px 0; border-top:1px dashed rgba(255,255,255,0.06); border-bottom:1px dashed rgba(255,255,255,0.06); word-break:break-word;">${escapeHtml(task.description)}</div>` : ''}
+                ${progress ? renderProgressBar(task.id) : ''}
+                <div class="task-meta">
+                    <span class="tag time"><i class="far fa-clock"></i> ${formatTimeToPersian(task.time)}</span>
+                    <span class="tag category"><i class="fas fa-tag"></i> ${task.category}</span>
+                    ${task.project ? `<span class="tag project"><i class="fas fa-project-diagram"></i> ${task.project}</span>` : ''}
+                    <span class="tag priority-${task.priority}">
+                        ${task.priority === 'high' ? '🔴 بالا' : task.priority === 'medium' ? '🟡 متوسط' : '🟢 پایین'}
+                    </span>
+                </div>
+                ${task.completed_at ? `<div style="font-size:11px; color:#28a745; margin:5px 0; padding-right:32px;"><i class="fas fa-check-circle"></i> ${formatDateTime(task.completed_at)}</div>` : ''}
+                ${renderSubtasks(task.id)}
+                <div class="task-actions">
+                    <button class="edit-btn" onclick="openEditModal('${task.id}')"><i class="fas fa-edit"></i> ویرایش</button>
+                    <button class="delete-btn" onclick="deleteTaskWithChildren('${task.id}')"><i class="fas fa-trash"></i> حذف</button>
                 </div>
             </div>
-            
-            <div style="text-align:center; color:rgba(255,255,255,0.3); font-size:13px; margin-top:10px;">
-                <i class="fas fa-lock"></i> برای دسترسی به ابزارها، وارد شوید
+        `;
+    }).join('');
+}
+
+function renderListTasks(tasksList) {
+    let mainTasks = tasksList.filter(t => !t.parent_id || t.parent_id === '');
+    if (mainTasks.length === 0) {
+        return `<div class="empty-state"><span class="icon"><i class="fas fa-inbox"></i></span>هیچ تسک اصلی یافت نشد</div>`;
+    }
+    return mainTasks.map(task => {
+        let progress = getTaskProgress(task.id);
+        return `
+            <div class="task-list-item" data-id="${task.id}">
+                <input type="checkbox" class="task-check" ${task.done ? 'checked' : ''} onchange="toggleTask('${task.id}')">
+                <div class="task-title ${task.done ? 'done' : ''}">
+                    <a href="task_detail.php?id=${task.id}">${escapeHtml(task.title)}</a>
+                    <span style="font-size:10px; background:rgba(102,126,234,0.15); color:#667eea; padding:1px 6px; border-radius:10px; margin-right:4px;">${getTaskChildren(task.id).length}</span>
+                </div>
+                <div class="task-meta">
+                    <span class="tag time" style="background:rgba(102,126,234,0.1); color:#667eea; padding:2px 8px; border-radius:8px; font-size:10px;">${formatTimeToPersian(task.time)}</span>
+                    <span class="tag category" style="background:rgba(245,87,108,0.1); color:#f5576c; padding:2px 8px; border-radius:8px; font-size:10px;">${task.category}</span>
+                </div>
+                <div class="task-actions">
+                    <button class="edit-btn" onclick="openEditModal('${task.id}')"><i class="fas fa-edit"></i></button>
+                    <button class="delete-btn" onclick="deleteTaskWithChildren('${task.id}')"><i class="fas fa-trash"></i></button>
+                </div>
+                ${task.description ? `<div style="width:100%; font-size:12px; color:rgba(255,255,255,0.3); margin-top:4px;">${escapeHtml(task.description)}</div>` : ''}
+                ${progress ? renderProgressBar(task.id) : ''}
             </div>
-        <?php endif; ?>
-    </div>
+        `;
+    }).join('');
+}
+
+function renderTasks() {
+    let filtered = getFilteredTasks();
+    let grouped = groupByDate(filtered);
+    let sortedDates = Object.keys(grouped).sort().reverse();
+    let container = document.getElementById('tasksContainer');
     
-    <script>
-        // ===== منوی کناری =====
-        function toggleSideMenu() {
-            const menu = document.getElementById('sideMenu');
-            const overlay = document.getElementById('sideMenuOverlay');
-            const btn = document.getElementById('menuToggleBtn');
-            
-            menu.classList.toggle('open');
-            overlay.classList.toggle('active');
-            btn.classList.toggle('active');
+    if (sortedDates.length === 0) {
+        container.innerHTML = '<div class="empty-state"><span class="icon"><i class="fas fa-inbox"></i></span>هیچ کاری یافت نشد</div>';
+        updateStats();
+        return;
+    }
+    
+    container.innerHTML = sortedDates.map(date => `
+        <div style="margin-bottom:25px;">
+            <div style="background:linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.15)); border-radius:12px; padding:10px 18px; margin-bottom:12px; border:1px solid rgba(102,126,234,0.1);">
+                <span style="color:white; font-weight:600;"><i class="fas fa-calendar-alt"></i> ${formatDate(date)}</span>
+                <span style="color:rgba(255,255,255,0.3); font-size:13px; margin-right:10px;">${toPersianNumbers(grouped[date].length)} تسک</span>
+            </div>
+            <div class="tasks-container-${currentView}">
+                ${currentView === 'grid' ? renderGridTasks(grouped[date]) : renderListTasks(grouped[date])}
+            </div>
+        </div>
+    `).join('');
+    
+    initSortables();
+    updateStats();
+}
+
+function initSortables() {
+    for (let id in sortableInstances) sortableInstances[id].destroy();
+    sortableInstances = {};
+    
+    document.querySelectorAll('.task-card').forEach(card => {
+        if (card.closest('.tasks-container-grid')) {
+            // برای نمایش کارتی
         }
-        
-        function closeSideMenu() {
-            document.getElementById('sideMenu').classList.remove('open');
-            document.getElementById('sideMenuOverlay').classList.remove('active');
-            document.getElementById('menuToggleBtn').classList.remove('active');
+    });
+    
+    document.querySelectorAll('.task-list-item').forEach(item => {
+        if (item.closest('.tasks-container-list')) {
+            // برای نمایش لیستی
         }
-        
-        document.addEventListener('click', function(e) {
-            const menu = document.getElementById('sideMenu');
-            const btn = document.getElementById('menuToggleBtn');
-            if (menu && menu.classList.contains('open') && 
-                !menu.contains(e.target) && 
-                !btn.contains(e.target)) {
-                closeSideMenu();
-            }
-        });
-        
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeSideMenu();
-            }
-        });
-        
-        // ===== تغییر تب‌ها =====
-        document.querySelectorAll('.auth-tab').forEach(tab => {
-            tab.addEventListener('click', function() {
-                document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-                document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
-                document.getElementById(this.dataset.tab + 'Form').classList.add('active');
-                document.getElementById('errorMsg').style.display = 'none';
-            });
-        });
-        
-        // ===== لاگین =====
-        document.getElementById('loginBtn')?.addEventListener('click', async function() {
-            const email = document.getElementById('loginEmail').value.trim();
-            const password = document.getElementById('loginPassword').value;
-            const errorMsg = document.getElementById('errorMsg');
-            
-            if (!email || !password) {
-                errorMsg.innerText = 'لطفاً ایمیل و رمز عبور را وارد کنید';
-                errorMsg.style.display = 'block';
-                return;
-            }
-            
-            this.disabled = true;
-            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ورود...';
-            
-            let formData = new FormData();
-            formData.append('action', 'login');
-            formData.append('email', email);
-            formData.append('password', password);
-            
-            try {
-                let response = await fetch(window.location.href, { method: 'POST', body: formData });
-                let result = await response.json();
-                
-                if (result.success) {
-                    location.reload();
-                } else {
-                    errorMsg.innerText = result.message;
-                    errorMsg.style.display = 'block';
-                    this.disabled = false;
-                    this.innerHTML = 'ورود';
-                }
-            } catch(e) {
-                errorMsg.innerText = 'خطا در ارتباط با سرور';
-                errorMsg.style.display = 'block';
-                this.disabled = false;
-                this.innerHTML = 'ورود';
-            }
-        });
-        
-        // ===== ثبت‌نام =====
-        document.getElementById('registerBtn')?.addEventListener('click', async function() {
-            const name = document.getElementById('registerName').value.trim();
-            const email = document.getElementById('registerEmail').value.trim();
-            const password = document.getElementById('registerPassword').value;
-            const confirmPassword = document.getElementById('registerConfirmPassword').value;
-            const errorMsg = document.getElementById('errorMsg');
-            
-            if (!name || !email || !password || !confirmPassword) {
-                errorMsg.innerText = 'لطفاً تمام فیلدها را پر کنید';
-                errorMsg.style.display = 'block';
-                return;
-            }
-            
-            if (password !== confirmPassword) {
-                errorMsg.innerText = 'رمز عبور و تکرار آن مطابقت ندارند';
-                errorMsg.style.display = 'block';
-                return;
-            }
-            
-            if (password.length < 4) {
-                errorMsg.innerText = 'رمز عبور باید حداقل ۴ کاراکتر باشد';
-                errorMsg.style.display = 'block';
-                return;
-            }
-            
-            this.disabled = true;
-            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ثبت‌نام...';
-            
-            let formData = new FormData();
-            formData.append('action', 'register');
-            formData.append('name', name);
-            formData.append('email', email);
-            formData.append('password', password);
-            
-            try {
-                let response = await fetch(window.location.href, { method: 'POST', body: formData });
-                let result = await response.json();
-                
-                if (result.success) {
-                    location.reload();
-                } else {
-                    errorMsg.innerText = result.message;
-                    errorMsg.style.display = 'block';
-                    this.disabled = false;
-                    this.innerHTML = 'ثبت‌نام';
-                }
-            } catch(e) {
-                errorMsg.innerText = 'خطا در ارتباط با سرور';
-                errorMsg.style.display = 'block';
-                this.disabled = false;
-                this.innerHTML = 'ثبت‌نام';
-            }
-        });
-        
-        // ===== خروج =====
-        function logout() {
-            let formData = new FormData();
-            formData.append('action', 'logout');
-            fetch(window.location.href, { method: 'POST', body: formData }).then(() => {
-                location.reload();
-            });
+    });
+}
+
+function renderAll() {
+    renderTasks();
+}
+
+// ===== توابع عملیات تسک =====
+async function toggleTask(id) {
+    await sendRequest('toggle', { id: id });
+}
+
+async function deleteTaskWithChildren(id) {
+    let task = tasks.find(t => t.id == id);
+    let children = getTaskChildren(id);
+    if (children.length > 0) {
+        if (confirm(`تسک "${task ? task.title : ''}" دارای ${children.length} زیرتسک است. حذف شود؟`)) {
+            await sendRequest('delete', { id: id, delete_children: 'true' });
         }
-    </script>
-</body>
-</html>
+    } else {
+        if (confirm('حذف شود؟')) await sendRequest('delete', { id: id });
+    }
+}
+
+function openAddTaskModal() {
+    document.getElementById('addTitle').value = '';
+    document.getElementById('addDescription').value = '';
+    document.getElementById('addDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('addTime').value = '12:00';
+    document.getElementById('addPriority').value = 'medium';
+    document.getElementById('addParentTask').value = '';
+    document.getElementById('addTaskModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function openAddSubtaskModal(parentId) {
+    document.getElementById('addTitle').value = '';
+    document.getElementById('addDescription').value = '';
+    document.getElementById('addDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('addTime').value = '12:00';
+    document.getElementById('addPriority').value = 'medium';
+    document.getElementById('addParentTask').value = parentId;
+    document.querySelector('#addTaskModal .modal-header').innerHTML = '<i class="fas fa-plus-circle"></i> افزودن زیرتسک';
+    document.getElementById('addTaskModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeAddTaskModal() {
+    document.getElementById('addTaskModal').style.display = 'none';
+    document.body.style.overflow = '';
+    document.querySelector('#addTaskModal .modal-header').innerHTML = '<i class="fas fa-plus-circle"></i> افزودن تسک جدید';
+}
+
+async function addNewTask() {
+    let title = document.getElementById('addTitle').value.trim();
+    if (!title) { alert('لطفاً عنوان تسک را وارد کنید'); return; }
+    let timeValue = document.getElementById('addTime').value;
+    if (!validateTime(timeValue)) { alert('فرمت زمان صحیح نیست'); return; }
+    
+    await sendRequest('add', {
+        title: title,
+        description: document.getElementById('addDescription').value,
+        category: document.getElementById('addCategory').value,
+        project: document.getElementById('addProject').value,
+        date: document.getElementById('addDate').value,
+        time: timeValue,
+        priority: document.getElementById('addPriority').value,
+        parent_id: document.getElementById('addParentTask').value
+    });
+    closeAddTaskModal();
+    document.querySelector('#addTaskModal .modal-header').innerHTML = '<i class="fas fa-plus-circle"></i> افزودن تسک جدید';
+}
+
+function openEditModal(id) {
+    let task = tasks.find(t => t.id == id);
+    if (!task) return;
+    currentEditId = id;
+    document.getElementById('editTitle').value = task.title;
+    document.getElementById('editCategory').value = task.category;
+    document.getElementById('editProject').value = task.project || '';
+    document.getElementById('editDate').value = task.date;
+    document.getElementById('editTime').value = task.time;
+    document.getElementById('editPriority').value = task.priority;
+    document.getElementById('editDescription').value = task.description || '';
+    document.getElementById('editParentTask').value = task.parent_id || '';
+    document.getElementById('editModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+    currentEditId = null;
+    document.body.style.overflow = '';
+}
+
+async function saveEdit() {
+    if (!currentEditId) return;
+    let timeValue = document.getElementById('editTime').value;
+    if (!validateTime(timeValue)) { alert('فرمت زمان صحیح نیست'); return; }
+    
+    await sendRequest('edit', {
+        id: currentEditId,
+        title: document.getElementById('editTitle').value,
+        description: document.getElementById('editDescription').value,
+        category: document.getElementById('editCategory').value,
+        project: document.getElementById('editProject').value,
+        date: document.getElementById('editDate').value,
+        time: timeValue,
+        priority: document.getElementById('editPriority').value,
+        parent_id: document.getElementById('editParentTask').value
+    });
+    closeEditModal();
+}
+
+// ===== مدیریت دسته و پروژه =====
+function openCategoryModal() {
+    refreshCategoryList();
+    document.getElementById('categoryModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeCategoryModal() {
+    document.getElementById('categoryModal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+async function addCategory() {
+    let newCat = document.getElementById('newCategoryName').value.trim();
+    if (newCat && !categories.includes(newCat)) {
+        await sendRequest('add_category', { category: newCat });
+        document.getElementById('newCategoryName').value = '';
+    } else if (newCat && categories.includes(newCat)) {
+        alert('این دسته بندی قبلاً وجود دارد');
+    } else {
+        alert('لطفاً نام دسته بندی را وارد کنید');
+    }
+}
+
+async function deleteCategory(category) {
+    if (confirm(`حذف دسته "${category}"؟`)) {
+        await sendRequest('delete_category', { category: category });
+    }
+}
+
+function openProjectModal() {
+    refreshProjectList();
+    document.getElementById('projectModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeProjectModal() {
+    document.getElementById('projectModal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+async function addProject() {
+    let newProj = document.getElementById('newProjectName').value.trim();
+    if (!newProj) {
+        alert('لطفاً نام پروژه را وارد کنید');
+        return;
+    }
+    if (projects.some(p => p.name === newProj)) {
+        alert('این پروژه قبلاً وجود دارد');
+        return;
+    }
+    let result = await sendRequest('add_project', { project: newProj });
+    if (result && !result.success && result.message) {
+        alert(result.message);
+    } else {
+        document.getElementById('newProjectName').value = '';
+    }
+}
+
+async function deleteProject(project) {
+    if (confirm(`آیا از حذف پروژه "${project}" مطمئن هستید؟`)) {
+        await sendRequest('delete_project', { project: project });
+        closeProjectModal();
+    }
+}
+
+// ===== صفحه پروژه =====
+function openProjectPage(projectName) {
+    let decodedName = decodeURIComponent(projectName);
+    let project = projects.find(p => p.name === decodedName);
+    if (!project) {
+        alert('پروژه یافت نشد');
+        return;
+    }
+    currentProjectPage = decodedName;
+    document.getElementById('projectPageTitle').innerHTML = project.name;
+    let descText = project.description || 'هنوز توضیحاتی ثبت نشده است';
+    document.getElementById('projectPageDesc').innerHTML = escapeHtml(descText).replace(/\n/g, '<br>');
+    
+    let projectTasks = tasks.filter(t => t.project === decodedName);
+    let total = projectTasks.length;
+    let completed = projectTasks.filter(t => t.done).length;
+    let pending = total - completed;
+    let percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    document.getElementById('projectPageStats').innerHTML = `
+        <div style="background:rgba(255,255,255,0.03); border-radius:12px; padding:12px; text-align:center; border:1px solid rgba(255,255,255,0.06);"><div style="font-size:22px; font-weight:bold; color:#43e97b;">${toPersianNumbers(total)}</div><div style="color:rgba(255,255,255,0.3); font-size:12px;">کل تسک‌ها</div></div>
+        <div style="background:rgba(255,255,255,0.03); border-radius:12px; padding:12px; text-align:center; border:1px solid rgba(255,255,255,0.06);"><div style="font-size:22px; font-weight:bold; color:#43e97b;">${toPersianNumbers(completed)}</div><div style="color:rgba(255,255,255,0.3); font-size:12px;">انجام شده</div></div>
+        <div style="background:rgba(255,255,255,0.03); border-radius:12px; padding:12px; text-align:center; border:1px solid rgba(255,255,255,0.06);"><div style="font-size:22px; font-weight:bold; color:#f5576c;">${toPersianNumbers(pending)}</div><div style="color:rgba(255,255,255,0.3); font-size:12px;">در انتظار</div></div>
+        <div style="background:rgba(255,255,255,0.03); border-radius:12px; padding:12px; text-align:center; border:1px solid rgba(255,255,255,0.06);"><div style="font-size:22px; font-weight:bold; color:#667eea;">${toPersianNumbers(percent)}%</div><div style="color:rgba(255,255,255,0.3); font-size:12px;">پیشرفت</div></div>
+    `;
+    
+    if (projectTasks.length === 0) {
+        document.getElementById('projectPageTasks').innerHTML = '<div style="text-align:center; padding:30px; color:rgba(255,255,255,0.3);">هیچ تسکی برای این پروژه وجود ندارد</div>';
+    } else {
+        document.getElementById('projectPageTasks').innerHTML = projectTasks.map(task => {
+            let progress = getTaskProgress(task.id);
+            return `
+                <div style="background:rgba(255,255,255,0.03); padding:10px 14px; margin-bottom:6px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border:1px solid rgba(255,255,255,0.04);">
+                    <div style="flex:1; min-width:150px;">
+                        <div style="font-weight:bold; color:white; ${task.done ? 'text-decoration:line-through; opacity:0.5;' : ''}">${escapeHtml(task.title)}</div>
+                        <div style="font-size:11px; color:rgba(255,255,255,0.3); display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;">
+                            <span>${formatDate(task.date)} - ${formatTimeToPersian(task.time)}</span>
+                            <span style="background:rgba(245,87,108,0.1); color:#f5576c; padding:0 6px; border-radius:4px;">${task.category}</span>
+                            ${progress ? `<span style="color:#43e97b;">پیشرفت: ${progress.percent}%</span>` : ''}
+                        </div>
+                    </div>
+                    <div>
+                        <input type="checkbox" ${task.done ? 'checked' : ''} onchange="toggleTask('${task.id}')" style="width:18px; height:18px; cursor:pointer; accent-color:#667eea;">
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    document.getElementById('projectPageModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeProjectPageModal() {
+    document.getElementById('projectPageModal').style.display = 'none';
+    document.body.style.overflow = '';
+    currentProjectPage = null;
+}
+
+async function editProjectDescription() {
+    if (!currentProjectPage) return;
+    let currentDesc = document.getElementById('projectPageDesc').innerText;
+    let newDesc = prompt('توضیحات جدید را وارد کنید:', currentDesc);
+    if (newDesc !== null && newDesc !== currentDesc) {
+        await sendRequest('update_project_description', {
+            name: currentProjectPage,
+            description: newDesc
+        });
+        document.getElementById('projectPageDesc').innerHTML = escapeHtml(newDesc).replace(/\n/g, '<br>');
+        let project = projects.find(p => p.name === currentProjectPage);
+        if (project) project.description = newDesc;
+    }
+}
+
+// ===== Event Listeners =====
+document.getElementById('openAddTaskBtn').addEventListener('click', openAddTaskModal);
+document.getElementById('saveAddTaskBtn').addEventListener('click', addNewTask);
+document.getElementById('addCategoryBtn').addEventListener('click', addCategory);
+document.getElementById('addProjectBtn').addEventListener('click', addProject);
+document.getElementById('editProjectDescBtn').addEventListener('click', editProjectDescription);
+document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+document.getElementById('openProjectModalBtn').addEventListener('click', openProjectModal);
+document.getElementById('openCategoryModalBtn').addEventListener('click', openCategoryModal);
+
+document.getElementById('gridViewBtn').addEventListener('click', () => setView('grid'));
+document.getElementById('listViewBtn').addEventListener('click', () => setView('list'));
+
+document.querySelectorAll('.time-input').forEach(input => {
+    input.addEventListener('input', function() { autoFormatTime(this); });
+});
+
+document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentFilter = this.dataset.filter;
+        renderAll();
+    });
+});
+
+document.getElementById('noteModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+// ===== مقداردهی اولیه =====
+if (currentView === 'grid') {
+    document.getElementById('gridViewBtn').classList.add('active');
+} else {
+    document.getElementById('listViewBtn').classList.add('active');
+}
+
+loadData();
+</script>
+
+<?php require_once __DIR__ . '/../template/footer.php'; ?>
