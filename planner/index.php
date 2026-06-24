@@ -1,5 +1,5 @@
 <?php
-// planner/index.php - نسخه کامل با استایل یکسان صفحه اصلی و اتاق جنگ
+// planner/index.php - نسخه کامل با منوی موبایل فعال و استایل یکسان صفحه اصلی
 session_start();
 date_default_timezone_set('Asia/Tehran');
 
@@ -1595,8 +1595,8 @@ $currentUser = getUserById($userId);
         .toast.error { background: #dc3545; }
         
         @media (max-width: 768px) {
-            .desktop-menu { display: none; }
             .hamburger { display: block; }
+            .desktop-menu { display: none; }
             .navbar-top { flex-direction: row; }
             .filter-group { flex-direction: column; width: 100%; }
             .filter-select, .clear-filters { width: 100%; }
@@ -1697,7 +1697,7 @@ $currentUser = getUserById($userId);
         <div class="container">
             <div class="navbar">
                 <div class="navbar-top">
-                    <div class="logo"><i class="fas fa-tasks"></i> برنامه‌ریز</div>
+                    <div class="logo"><i class="fas fa-tasks"></i> پلنر شخصی من</div>
                     <button class="hamburger" id="hamburgerBtn">
                         <span></span><span></span><span></span>
                     </button>
@@ -2153,6 +2153,25 @@ $currentUser = getUserById($userId);
             });
         }
         
+        // ===== منوی موبایل =====
+        document.getElementById('hamburgerBtn')?.addEventListener('click', function() {
+            const menu = document.getElementById('mobileMenu');
+            const overlay = document.getElementById('mobileMenuOverlay');
+            this.classList.toggle('active');
+            menu.classList.toggle('open');
+            overlay.classList.toggle('active');
+            document.body.style.overflow = menu.classList.contains('open') ? 'hidden' : '';
+        });
+
+        document.getElementById('mobileMenuOverlay')?.addEventListener('click', function() {
+            const menu = document.getElementById('mobileMenu');
+            const btn = document.getElementById('hamburgerBtn');
+            menu.classList.remove('open');
+            this.classList.remove('active');
+            btn.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+
         // ===== منوی کشویی پروفایل =====
         document.addEventListener('DOMContentLoaded', function() {
             const trigger = document.getElementById('profileTrigger');
