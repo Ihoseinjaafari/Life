@@ -1,5 +1,5 @@
 <?php
-// planner/index.php - نسخه کامل با Dark Mode
+// planner/index.php - نسخه کامل با استایل یکسان صفحه اصلی و اتاق جنگ
 session_start();
 date_default_timezone_set('Asia/Tehran');
 
@@ -402,15 +402,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $response = ['success' => true, 'categories' => $categories];
     }
-elseif ($action === 'delete_category') {
-    $categoryToDelete = $_POST['category'] ?? '';
-    $categories = getCategories();
-    $categories = array_values(array_filter($categories, function($c) use ($categoryToDelete) {
-        return $c != $categoryToDelete;
-    }));
-    saveCategories($categories);
-    $response = ['success' => true, 'categories' => $categories];
-}
+    elseif ($action === 'delete_category') {
+        $categoryToDelete = $_POST['category'] ?? '';
+        $categories = getCategories();
+        $categories = array_values(array_filter($categories, function($c) use ($categoryToDelete) {
+            return $c != $categoryToDelete;
+        }));
+        saveCategories($categories);
+        $response = ['success' => true, 'categories' => $categories];
+    }
     elseif ($action === 'add_project') {
         $newProject = htmlspecialchars(trim($_POST['project'] ?? ''));
         if ($newProject) {
@@ -478,6 +478,8 @@ elseif ($action === 'delete_category') {
 $currentDate = date('Y-m-d');
 $todayTehran = date('Y-m-d');
 $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
+$userId = $_SESSION['user_id'];
+$currentUser = getUserById($userId);
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -489,71 +491,33 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <style>
-        /* ===== متغیرهای CSS برای تم ===== */
+        /* ===== استایل یکسان با صفحه اصلی و اتاق جنگ ===== */
         :root {
-            --bg-primary: #f0f2f5;
-            --bg-secondary: #ffffff;
-            --bg-card: #ffffff;
-            --bg-card-hover: #f8f9fa;
-            --bg-input: #fafafa;
-            --bg-input-hover: #ffffff;
-            --bg-header: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --text-primary: #1a1a2e;
-            --text-secondary: #333333;
-            --text-muted: #6c757d;
-            --text-light: #999999;
-            --border-color: #e8e8e8;
-            --border-card: #f0f0f0;
-            --shadow-color: rgba(0, 0, 0, 0.08);
-            --shadow-hover: rgba(0, 0, 0, 0.15);
-            --modal-overlay: rgba(0, 0, 0, 0.5);
+            --bg-primary: #0f0c29;
+            --bg-secondary: #302b63;
+            --bg-card: rgba(255,255,255,0.05);
+            --bg-card-hover: rgba(255,255,255,0.08);
+            --bg-input: rgba(255,255,255,0.05);
+            --bg-input-hover: rgba(255,255,255,0.08);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255,255,255,0.8);
+            --text-muted: rgba(255,255,255,0.5);
+            --text-light: rgba(255,255,255,0.3);
+            --border-color: rgba(255,255,255,0.08);
+            --border-card: rgba(255,255,255,0.06);
+            --shadow-color: rgba(0,0,0,0.2);
+            --shadow-hover: rgba(0,0,0,0.4);
+            --modal-overlay: rgba(0,0,0,0.7);
             --toast-bg: #1a1a2e;
-            --scrollbar-track: transparent;
-            --scrollbar-thumb: #ccc;
-            --badge-bg: #e7f3ff;
-            --badge-color: #0066cc;
-            --streak-bg: #fff3cd;
-            --streak-color: #856404;
-            --done-bg: #f0fff4;
-            --done-border: #28a745;
-            --progress-bg: #e9ecef;
-            --progress-fill: linear-gradient(90deg, #28a745, #20c997);
+            --badge-bg: rgba(102,126,234,0.15);
+            --badge-color: #667eea;
+            --done-bg: rgba(40,167,69,0.1);
+            --done-border: rgba(40,167,69,0.3);
+            --progress-bg: rgba(255,255,255,0.05);
+            --progress-fill: linear-gradient(90deg, #667eea, #764ba2);
             --completed-date: #28a745;
-            --empty-color: #999;
-            --user-info-bg: #f8f9fa;
-        }
-
-        body.dark-mode {
-            --bg-primary: #1a1a2e;
-            --bg-secondary: #16213e;
-            --bg-card: #1e2a4a;
-            --bg-card-hover: #2a3a5a;
-            --bg-input: #2a3a5a;
-            --bg-input-hover: #3a4a6a;
-            --bg-header: linear-gradient(135deg, #4a3a8a 0%, #5a3a7a 100%);
-            --text-primary: #e8e8e8;
-            --text-secondary: #d0d0d0;
-            --text-muted: #a0a0a0;
-            --text-light: #888888;
-            --border-color: #2a3a5a;
-            --border-card: #2a3a5a;
-            --shadow-color: rgba(0, 0, 0, 0.3);
-            --shadow-hover: rgba(0, 0, 0, 0.5);
-            --modal-overlay: rgba(0, 0, 0, 0.7);
-            --toast-bg: #2a3a5a;
-            --scrollbar-track: #1a1a2e;
-            --scrollbar-thumb: #4a4a6a;
-            --badge-bg: #2a3a6a;
-            --badge-color: #88bbff;
-            --streak-bg: #4a3a1a;
-            --streak-color: #ffcc44;
-            --done-bg: #1a3a2a;
-            --done-border: #44aa66;
-            --progress-bg: #2a3a4a;
-            --progress-fill: linear-gradient(90deg, #44aa66, #33bb88);
-            --completed-date: #44aa66;
-            --empty-color: #666;
-            --user-info-bg: #1a2a3a;
+            --empty-color: rgba(255,255,255,0.2);
+            --user-info-bg: rgba(255,255,255,0.03);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -564,11 +528,10 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         body {
-            background: var(--bg-primary);
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
             min-height: 100vh;
             padding: 20px;
             color: var(--text-primary);
-            transition: background 0.3s ease, color 0.3s ease;
         }
 
         .theme-toggle-btn {
@@ -603,49 +566,11 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         
         .main-app { display: block; }
         
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: #667eea;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 18px;
-        }
-        
-        .user-name {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-primary);
-        }
-        
-        .logout-btn {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 5px 12px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.3s;
-        }
-        
-        .logout-btn:hover {
-            background: #c82333;
-            transform: scale(1.02);
-        }
+        .user-info { display: none; }
         
         .navbar {
             background: var(--bg-card);
+            backdrop-filter: blur(10px);
             border-radius: 20px;
             padding: 12px 20px;
             margin-bottom: 25px;
@@ -682,27 +607,28 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             cursor: pointer;
             border-radius: 20px;
             border: none;
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             font-size: 13px;
             transition: all 0.3s;
-            color: var(--text-secondary);
+            color: var(--text-muted);
         }
         
-        .nav-btn:hover { background: var(--border-color); }
+        .nav-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
         .nav-btn.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
         
         .manage-btn {
             padding: 6px 14px;
-            color: white;
+            color: var(--text-secondary);
             border: none;
             border-radius: 20px;
             cursor: pointer;
             font-size: 13px;
             transition: all 0.3s;
             font-weight: 500;
+            background: rgba(255,255,255,0.03);
         }
         
-        .manage-btn:hover { transform: scale(1.05); }
+        .manage-btn:hover { background: rgba(255,255,255,0.08); transform: scale(1.05); }
         
         .add-task-fab {
             position: fixed;
@@ -745,8 +671,8 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             cursor: pointer;
             font-size: 14px;
             transition: all 0.3s;
-            background: var(--bg-input);
-            color: var(--text-secondary);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-muted);
         }
         
         .view-btn-global.active {
@@ -780,26 +706,26 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         
         .date-range-input {
             padding: 8px 12px;
-            border: 2px solid var(--border-color);
+            border: 1px solid var(--border-color);
             border-radius: 10px;
             font-size: 13px;
             cursor: pointer;
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             color: var(--text-primary);
         }
         
         .filter-select {
             padding: 8px 15px;
-            border: 2px solid var(--border-color);
+            border: 1px solid var(--border-color);
             border-radius: 10px;
             font-size: 14px;
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             color: var(--text-primary);
         }
         
         .clear-filters {
-            background: #dc3545;
-            color: white;
+            background: rgba(220,53,69,0.2);
+            color: #ff6b6b;
             border: none;
             padding: 8px 20px;
             border-radius: 10px;
@@ -807,15 +733,19 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             font-size: 14px;
         }
         
+        .clear-filters:hover { background: rgba(220,53,69,0.3); }
+        
         .apply-date-range {
-            background: #28a745;
-            color: white;
+            background: rgba(40,167,69,0.2);
+            color: #28a745;
             border: none;
             padding: 8px 15px;
             border-radius: 10px;
             cursor: pointer;
             font-size: 13px;
         }
+        
+        .apply-date-range:hover { background: rgba(40,167,69,0.3); }
         
         .stats {
             display: grid;
@@ -840,7 +770,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         .stat-label {
-            color: var(--text-light);
+            color: var(--text-muted);
             font-size: 13px;
             margin-top: 5px;
         }
@@ -866,8 +796,8 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         .date-group { margin-bottom: 30px; }
         
         .date-header {
-            background: var(--bg-header);
-            color: white;
+            background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.15));
+            color: var(--text-primary);
             padding: 12px 20px;
             border-radius: 15px;
             margin-bottom: 20px;
@@ -875,6 +805,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border: 1px solid var(--border-color);
         }
         
         .cards-grid {
@@ -884,12 +815,12 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         .task-card {
-            background: var(--bg-card);
+            background: rgba(255,255,255,0.03);
             border-radius: 16px;
             padding: 16px 18px;
             box-shadow: 0 2px 12px var(--shadow-color);
             transition: all 0.3s ease;
-            border: 2px solid var(--border-card);
+            border: 1px solid var(--border-color);
             position: relative;
             cursor: grab;
             display: flex;
@@ -999,18 +930,12 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             gap: 4px;
         }
         
-        .time-badge { background: var(--badge-bg); color: var(--badge-color); }
-        .category-badge { background: #f0e6ff; color: #7b2cbf; }
-        .project-badge { background: #e6f7e6; color: #2d6a4f; }
-        .priority-high { background: #f8d7da; color: #721c24; }
-        .priority-medium { background: #fff3cd; color: #856404; }
-        .priority-low { background: #d4edda; color: #155724; }
-        
-        body.dark-mode .category-badge { background: #3a2a5a; color: #bb88ff; }
-        body.dark-mode .project-badge { background: #1a3a2a; color: #66aa88; }
-        body.dark-mode .priority-high { background: #5a2a2a; color: #ff8888; }
-        body.dark-mode .priority-medium { background: #5a4a1a; color: #ffcc44; }
-        body.dark-mode .priority-low { background: #1a3a2a; color: #66dd88; }
+        .time-badge { background: rgba(102,126,234,0.15); color: #667eea; }
+        .category-badge { background: rgba(245,87,108,0.15); color: #f5576c; }
+        .project-badge { background: rgba(67,233,123,0.15); color: #43e97b; }
+        .priority-high { background: rgba(220,53,69,0.2); color: #ff6b6b; }
+        .priority-medium { background: rgba(255,193,7,0.2); color: #ffc107; }
+        .priority-low { background: rgba(40,167,69,0.2); color: #28a745; }
         
         .completed-date {
             font-size: 11px;
@@ -1024,7 +949,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             margin: 8px 0;
             background: var(--progress-bg);
             border-radius: 20px;
-            height: 6px;
+            height: 4px;
             overflow: hidden;
             padding-right: 70px;
         }
@@ -1038,7 +963,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         
         .progress-text {
             font-size: 11px;
-            color: var(--completed-date);
+            color: var(--text-light);
             font-weight: 600;
             margin-top: 3px;
             display: flex;
@@ -1049,7 +974,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         .subtasks-container {
             margin-top: 10px;
             padding: 10px 14px;
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             border-radius: 10px;
             border-right: 3px solid #667eea;
             margin-right: 70px;
@@ -1120,7 +1045,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         .edit-card-btn:hover { background: var(--badge-bg); color: var(--badge-color); }
-        .delete-card-btn:hover { background: #fee; color: #dc3545; }
+        .delete-card-btn:hover { background: rgba(220,53,69,0.15); color: #ff6b6b; }
         .subtask-btn { 
             background: none; 
             border: none; 
@@ -1142,8 +1067,8 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             display: flex;
             align-items: center;
             gap: 12px;
-            background: var(--bg-card);
-            border: 2px solid var(--border-card);
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 12px 16px;
             transition: all 0.3s;
@@ -1207,7 +1132,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         .edit-btn-list:hover { background: var(--badge-bg); color: var(--badge-color); }
-        .delete-btn-list:hover { background: #fee; color: #dc3545; }
+        .delete-btn-list:hover { background: rgba(220,53,69,0.15); color: #ff6b6b; }
         
         .empty-state {
             text-align: center;
@@ -1228,24 +1153,25 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         .modal-content {
-            background: var(--bg-card);
+            background: #1a1a2e;
+            border: 1px solid rgba(255,255,255,0.08);
             margin: 5% auto;
             width: 90%;
             max-width: 500px;
             border-radius: 25px;
             max-height: 90vh;
             overflow-y: auto;
-            border: 1px solid var(--border-color);
         }
         
         .modal-header {
-            background: var(--bg-header);
+            background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
             padding: 20px 25px;
             font-weight: 600;
             font-size: 18px;
             position: sticky;
             top: 0;
+            border-radius: 25px 25px 0 0;
         }
         
         .modal-body { padding: 25px; }
@@ -1254,11 +1180,17 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             width: 100%;
             padding: 12px 15px;
             margin-bottom: 18px;
-            border: 2px solid var(--border-color);
+            border: 1px solid rgba(255,255,255,0.08);
             border-radius: 12px;
             font-size: 14px;
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             color: var(--text-primary);
+        }
+        
+        .modal-body input:focus, .modal-body select:focus, .modal-body textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(255,255,255,0.06);
         }
         
         .modal-body textarea { resize: vertical; min-height: 100px; }
@@ -1271,14 +1203,17 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         .btn-cancel {
-            background: var(--border-color);
+            background: rgba(255,255,255,0.05);
             color: var(--text-secondary);
             padding: 12px 25px;
-            border: none;
+            border: 1px solid var(--border-color);
             border-radius: 12px;
             cursor: pointer;
             flex: 1;
+            font-family: inherit;
         }
+        
+        .btn-cancel:hover { background: rgba(255,255,255,0.1); }
         
         .btn-save {
             background: linear-gradient(135deg, #667eea, #764ba2);
@@ -1288,7 +1223,11 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             border-radius: 12px;
             cursor: pointer;
             flex: 1;
+            font-family: inherit;
+            font-weight: 600;
         }
+        
+        .btn-save:hover { transform: scale(1.02); }
         
         .project-item {
             display: flex;
@@ -1311,7 +1250,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         .project-link:hover { color: #2d6a4f; }
         
         .project-stat-card {
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             border-radius: 12px;
             padding: 12px;
             text-align: center;
@@ -1338,10 +1277,10 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             color: white;
         }
         
-        .profile-email { color: var(--text-light); font-size: 14px; margin-top: 5px; }
+        .profile-email { color: var(--text-muted); font-size: 14px; margin-top: 5px; }
         
         .project-task-item {
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             padding: 12px;
             margin-bottom: 8px;
             border-radius: 10px;
@@ -1349,13 +1288,13 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             justify-content: space-between;
             align-items: center;
             transition: all 0.3s ease;
-            border: 2px solid transparent;
+            border: 1px solid var(--border-color);
             flex-wrap: wrap;
             gap: 10px;
         }
         
         .project-task-item:hover {
-            background: var(--bg-card-hover);
+            background: rgba(255,255,255,0.06);
             border-color: #667eea;
             transform: translateX(5px);
         }
@@ -1400,12 +1339,12 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             padding: 4px 10px 4px 4px;
             border-radius: 30px;
             transition: all 0.3s ease;
-            background: var(--bg-input);
-            border: 1px solid transparent;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-color);
         }
 
         .profile-trigger:hover {
-            background: var(--border-color);
+            background: rgba(255,255,255,0.08);
             border-color: #667eea;
         }
 
@@ -1434,7 +1373,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             top: calc(100% + 8px);
             right: 0;
             min-width: 180px;
-            background: var(--bg-card);
+            background: #1a1a2e;
             border-radius: 14px;
             box-shadow: 0 10px 40px var(--shadow-color);
             border: 1px solid var(--border-color);
@@ -1470,7 +1409,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
 
         .dropdown-item:hover {
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             color: var(--text-primary);
         }
 
@@ -1491,18 +1430,10 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
 
         .dropdown-item.logout-item:hover {
-            background: #fef0f0;
-            color: #dc3545;
+            background: rgba(220,53,69,0.15);
+            color: #ff6b6b;
         }
 
-        body.dark-mode .dropdown-item.logout-item:hover {
-            background: #3a1a1a;
-        }
-
-        .user-info {
-            display: none;
-        }
-        
         /* ===== منو موبایل ===== */
         .hamburger {
             display: none;
@@ -1545,7 +1476,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             right: -320px;
             width: 320px;
             height: 100vh;
-            background: var(--bg-card);
+            background: #1a1a2e;
             z-index: 1000;
             padding: 80px 20px 30px;
             transition: right 0.3s ease;
@@ -1619,7 +1550,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             padding: 10px 16px;
             border: none;
             border-radius: 12px;
-            background: var(--bg-input);
+            background: rgba(255,255,255,0.03);
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
@@ -1632,7 +1563,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         
         .menu-section-buttons button:hover,
         .menu-section-buttons a:hover {
-            background: var(--border-color);
+            background: rgba(255,255,255,0.06);
             transform: translateX(-5px);
         }
         
@@ -1784,30 +1715,30 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                         
                         <div class="menu-group">
                             <span class="menu-group-label"><i class="fas fa-tools"></i></span>
-                            <button class="manage-btn project-btn" onclick="openProjectModal()" style="background: linear-gradient(135deg, #2d6a4f, #40916c);">
+                            <button class="manage-btn project-btn" onclick="openProjectModal()" style="background: rgba(45,106,79,0.2); color:#2d6a4f;">
                                 <i class="fas fa-project-diagram"></i> پروژه‌ها
                             </button>
-                            <button class="manage-btn" onclick="openCategoryModal()" style="background: linear-gradient(135deg, #6f42c1, #8b5cf6);">
+                            <button class="manage-btn" onclick="openCategoryModal()" style="background: rgba(111,66,193,0.2); color:#8b5cf6;">
                                 <i class="fas fa-tags"></i> دسته‌ها
                             </button>
-                            <button class="manage-btn" onclick="location.href='habits.php'" style="background: linear-gradient(135deg, #f59e0b, #f97316);">
+                            <button class="manage-btn" onclick="location.href='habits.php'" style="background: rgba(245,158,11,0.2); color:#f59e0b;">
                                 <i class="fas fa-fire"></i> عادت‌ها
                             </button>
                         </div>
                         
                         <div class="menu-group">
                             <span class="menu-group-label"><i class="fas fa-export"></i></span>
-                            <button class="manage-btn" id="exportCsvBtn" style="background: #28a745;">
+                            <button class="manage-btn" id="exportCsvBtn" style="background: rgba(40,167,69,0.2); color:#28a745;">
                                 <i class="fas fa-file-csv"></i> CSV
                             </button>
                             
                             <?php if ($currentUser && $currentUser['email'] === 'admin@example.com'): ?>
-                                <a href="admin.php" class="manage-btn" style="background: #dc3545; text-decoration: none;">
+                                <a href="admin.php" class="manage-btn" style="background: rgba(220,53,69,0.2); color:#ff6b6b; text-decoration: none;">
                                     <i class="fas fa-shield-alt"></i> مدیریت
                                 </a>
                             <?php endif; ?>
                             
-                            <a href="../index.php" class="manage-btn" style="background: linear-gradient(135deg, #667eea, #764ba2); text-decoration: none;">
+                            <a href="../index.php" class="manage-btn" style="background: linear-gradient(135deg, #667eea, #764ba2); color:white; text-decoration: none;">
                                 <i class="fas fa-home"></i> صفحه اصلی
                             </a>
                         </div>
@@ -1854,13 +1785,13 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                     </div>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
-                    <button onclick="openProfileModal(); closeMobileMenu();" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: #667eea; color: white; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit;">
+                    <button onclick="openProfileModal(); closeMobileMenu();" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit;">
                         <i class="fas fa-user-circle"></i> پروفایل
                     </button>
-                    <button onclick="logout(); closeMobileMenu();" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: #dc3545; color: white; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit;">
+                    <button onclick="logout(); closeMobileMenu();" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: rgba(220,53,69,0.2); color:#ff6b6b; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit;">
                         <i class="fas fa-sign-out-alt"></i> خروج
                     </button>
-                    <button onclick="toggleTheme(); closeMobileMenu();" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: var(--bg-input); color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; border: 1px solid var(--border-color);">
+                    <button onclick="toggleTheme(); closeMobileMenu();" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: rgba(255,255,255,0.05); color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; border: 1px solid var(--border-color);">
                         <i class="fas fa-moon"></i> تغییر تم
                     </button>
                     <a href="../index.php" style="width: 100%; padding: 10px; border: none; border-radius: 10px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; text-decoration: none; text-align: center;">
@@ -1883,13 +1814,13 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                 <div class="menu-section">
                     <div class="menu-section-title"><i class="fas fa-tools"></i> مدیریت</div>
                     <div class="menu-section-buttons">
-                        <button onclick="openProjectModal(); closeMobileMenu();" style="background: linear-gradient(135deg, #2d6a4f, #40916c); color: white;">
+                        <button onclick="openProjectModal(); closeMobileMenu();" style="background: rgba(45,106,79,0.2); color:#2d6a4f;">
                             <i class="fas fa-project-diagram"></i> پروژه‌ها
                         </button>
-                        <button onclick="openCategoryModal(); closeMobileMenu();" style="background: linear-gradient(135deg, #6f42c1, #8b5cf6); color: white;">
+                        <button onclick="openCategoryModal(); closeMobileMenu();" style="background: rgba(111,66,193,0.2); color:#8b5cf6;">
                             <i class="fas fa-tags"></i> دسته‌بندی
                         </button>
-                        <button onclick="location.href='habits.php'; closeMobileMenu();" style="background: linear-gradient(135deg, #f59e0b, #f97316); color: white;">
+                        <button onclick="location.href='habits.php'; closeMobileMenu();" style="background: rgba(245,158,11,0.2); color:#f59e0b;">
                             <i class="fas fa-fire"></i> عادت‌ها
                         </button>
                     </div>
@@ -1898,11 +1829,11 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                 <div class="menu-section">
                     <div class="menu-section-title"><i class="fas fa-export"></i> خروجی</div>
                     <div class="menu-section-buttons">
-                        <button onclick="exportCSV(); closeMobileMenu();" style="background: #28a745; color: white;">
+                        <button onclick="exportCSV(); closeMobileMenu();" style="background: rgba(40,167,69,0.2); color:#28a745;">
                             <i class="fas fa-file-csv"></i> خروجی CSV
                         </button>
                         <?php if ($currentUser && $currentUser['email'] === 'admin@example.com'): ?>
-                            <button onclick="location.href='admin.php'; closeMobileMenu();" style="background: #dc3545; color: white;">
+                            <button onclick="location.href='admin.php'; closeMobileMenu();" style="background: rgba(220,53,69,0.2); color:#ff6b6b;">
                                 <i class="fas fa-shield-alt"></i> پنل مدیریت
                             </button>
                         <?php endif; ?>
@@ -1971,7 +1902,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                 </select>
                 <textarea id="addDescription" placeholder="توضیحات (اختیاری)..." rows="3"></textarea>
                 
-                <div style="margin-top: 10px; padding: 10px; background: var(--bg-input); border-radius: 10px; border: 1px solid var(--border-color);">
+                <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid var(--border-color);">
                     <label style="display: block; margin-bottom: 8px; font-weight: bold; color: var(--text-secondary);">زیرتسک برای کار مادر</label>
                     <select id="addParentTask">
                         <option value="">بدون والد (تسک اصلی)</option>
@@ -1991,10 +1922,10 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             <div class="modal-body">
                 <div id="projectList"></div>
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
-                    <input type="text" id="newProjectName" placeholder="نام پروژه جدید" style="flex:1; padding: 10px 14px; border: 2px solid var(--border-color); border-radius: 12px; font-size: 14px; background: var(--bg-input); color: var(--text-primary);">
+                    <input type="text" id="newProjectName" placeholder="نام پروژه جدید" style="flex:1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 12px; font-size: 14px; background: rgba(255,255,255,0.03); color: var(--text-primary);">
                     <button class="btn-save" id="addProjectBtn" style="flex:0;">افزودن</button>
                 </div>
-                <div style="margin-top: 15px; padding: 10px; background: var(--bg-input); border-radius: 10px; font-size: 12px; color: var(--text-light); border: 1px solid var(--border-color);">
+                <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; font-size: 12px; color: var(--text-light); border: 1px solid var(--border-color);">
                     <i class="fas fa-info-circle"></i> برای مشاهده صفحه اختصاصی هر پروژه، روی نام آن کلیک کنید
                 </div>
             </div>
@@ -2010,8 +1941,8 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             <div class="modal-body">
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: bold; color: var(--text-secondary);">توضیحات پروژه:</label>
-                    <div id="projectPageDesc" style="background: var(--bg-input); padding: 15px; border-radius: 12px; min-height: 80px; white-space: pre-wrap; border: 1px solid var(--border-color); color: var(--text-secondary);"></div>
-                    <button id="editProjectDescBtn" class="manage-btn" style="margin-top: 10px; background: #667eea;"><i class="fas fa-edit"></i> ویرایش توضیحات</button>
+                    <div id="projectPageDesc" style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; min-height: 80px; white-space: pre-wrap; border: 1px solid var(--border-color); color: var(--text-secondary);"></div>
+                    <button id="editProjectDescBtn" class="manage-btn" style="margin-top: 10px; background: rgba(102,126,234,0.2); color:#667eea; border: 1px solid rgba(102,126,234,0.15);"><i class="fas fa-edit"></i> ویرایش توضیحات</button>
                 </div>
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: bold; color: var(--text-secondary);">آمار پروژه:</label>
@@ -2034,7 +1965,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             <div class="modal-body">
                 <div id="categoryList"></div>
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
-                    <input type="text" id="newCategoryName" placeholder="نام دسته جدید" style="flex:1; padding: 10px 14px; border: 2px solid var(--border-color); border-radius: 12px; font-size: 14px; background: var(--bg-input); color: var(--text-primary);">
+                    <input type="text" id="newCategoryName" placeholder="نام دسته جدید" style="flex:1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 12px; font-size: 14px; background: rgba(255,255,255,0.03); color: var(--text-primary);">
                     <button class="btn-save" id="addCategoryBtn" style="flex:0;">افزودن</button>
                 </div>
             </div>
@@ -2060,7 +1991,7 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                 </select>
                 <textarea id="editDescription" placeholder="توضیحات..." rows="4"></textarea>
                 
-                <div style="margin-top: 10px; padding: 10px; background: var(--bg-input); border-radius: 10px; border: 1px solid var(--border-color);">
+                <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid var(--border-color);">
                     <label style="display: block; margin-bottom: 8px; font-weight: bold; color: var(--text-secondary);">زیرتسک برای کار مادر</label>
                     <select id="editParentTask">
                         <option value="">بدون والد (تسک اصلی)</option>
@@ -2088,8 +2019,8 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
                 
                 <div style="margin-top: 20px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: bold; color: var(--text-secondary);">تغییر رمز عبور</label>
-                    <input type="password" id="newPassword" placeholder="رمز عبور جدید" style="width: 100%; padding: 12px; border: 2px solid var(--border-color); border-radius: 12px; margin-bottom: 15px; background: var(--bg-input); color: var(--text-primary);">
-                    <input type="password" id="confirmNewPassword" placeholder="تکرار رمز عبور جدید" style="width: 100%; padding: 12px; border: 2px solid var(--border-color); border-radius: 12px; margin-bottom: 15px; background: var(--bg-input); color: var(--text-primary);">
+                    <input type="password" id="newPassword" placeholder="رمز عبور جدید" style="width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 15px; background: rgba(255,255,255,0.03); color: var(--text-primary);">
+                    <input type="password" id="confirmNewPassword" placeholder="تکرار رمز عبور جدید" style="width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 15px; background: rgba(255,255,255,0.03); color: var(--text-primary);">
                     <div id="passwordError" style="color: #dc3545; font-size: 12px; margin-bottom: 10px; display: none;"></div>
                 </div>
             </div>
@@ -2145,6 +2076,10 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
             if (str === undefined || str === null) return '';
             const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
             return String(str).replace(/[0-9]/g, function(d) { return persianDigits[parseInt(d)]; });
+        }
+        
+        function validateEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
         }
         
         function validateTime(timeStr) { return /^([0-1][0-9]|2[0-3]):([0-5][0-9])$/.test(timeStr); }
@@ -2255,38 +2190,30 @@ $tomorrowTehran = date('Y-m-d', strtotime('+1 days'));
         }
         
         // ===== خروجی CSV =====
-async function exportCSV() {
-    let formData = new FormData();
-    formData.append('action', 'export_csv');
-    try {
-        let response = await fetch(window.location.href, { method: 'POST', body: formData });
-        let result = await response.json();
-        
-        if (result.success) {
-            let blob = new Blob(["\uFEFF" + result.data], { type: 'text/csv;charset=utf-8;' });
-            let url = URL.createObjectURL(blob);
-            let a = document.createElement('a');
-            a.href = url;
-            a.download = `tasks_${new Date().toISOString().split('T')[0]}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('خروجی CSV با موفقیت دانلود شد', 'success');
-        } else {
-            showToast('خطا در ایجاد خروجی CSV', 'error');
+        async function exportCSV() {
+            let formData = new FormData();
+            formData.append('action', 'export_csv');
+            try {
+                let response = await fetch(window.location.href, { method: 'POST', body: formData });
+                let result = await response.json();
+                if (result.success) {
+                    let blob = new Blob(["\uFEFF" + result.data], { type: 'text/csv;charset=utf-8;' });
+                    let url = URL.createObjectURL(blob);
+                    let a = document.createElement('a');
+                    a.href = url;
+                    a.download = `tasks_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } else {
+                    alert('خطا در ایجاد خروجی CSV');
+                }
+            } catch(e) {
+                console.error('خطا:', e);
+                alert('خطا در ارتباط با سرور');
+            }
         }
-    } catch (e) {
-        console.error('خطا:', e);
-        showToast('خطا در ارتباط با سرور', 'error');
-    }
-}
-
-// ===== توابع دیتا =====
-async function loadData() {
-    // ... کدهای قبلی
-}
-        
         
         // ===== توابع دیتا =====
         async function loadData() {
@@ -2305,7 +2232,7 @@ async function loadData() {
                 } else {
                     console.error('خطا در بارگذاری دیتا:', result);
                 }
-            } catch (e) {
+            } catch(e) {
                 console.error('خطا در ارتباط با سرور:', e);
             }
         }
@@ -2339,7 +2266,7 @@ async function loadData() {
                     console.error('خطا در درخواست:', result);
                 }
                 return result;
-            } catch (e) {
+            } catch(e) {
                 console.error('خطا در ارتباط با سرور:', e);
                 return { success: false };
             }
@@ -2361,7 +2288,7 @@ async function loadData() {
             if (!categories || categories.length === 0) {
                 container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-light);">هیچ دسته‌بندی تعریف نشده است</div>';
             } else {
-                container.innerHTML = categories.map(cat => `<div class="project-item"><span><i class="fas fa-tag"></i> ${cat}</span><button onclick="deleteCategory('${cat}')" style="background:#fee; padding:5px 10px; border:none; border-radius:8px; cursor:pointer;">🗑️</button></div>`).join('');
+                container.innerHTML = categories.map(cat => `<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border-color);"><span style="color:var(--text-primary);">${cat}</span><button onclick="deleteCategory('${cat}')" style="background:rgba(220,53,69,0.15); color:#ff6b6b; padding:4px 10px; border:none; border-radius:6px; cursor:pointer;">🗑️</button></div>`).join('');
             }
         }
         
@@ -2371,11 +2298,11 @@ async function loadData() {
                 container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-light);">هیچ پروژه‌ای تعریف نشده است</div>';
             } else {
                 container.innerHTML = projects.map(proj => `
-                    <div class="project-item">
-                        <a class="project-link" onclick="openProjectPage('${encodeURIComponent(proj.name)}')">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border-color);">
+                        <a onclick="openProjectPage('${encodeURIComponent(proj.name)}')" style="cursor:pointer; color:var(--text-primary); text-decoration:none; display:flex; align-items:center; gap:8px;">
                             <i class="fas fa-project-diagram" style="color: ${proj.color || '#2d6a4f'}"></i> ${escapeHtml(proj.name)}
                         </a>
-                        <button onclick="deleteProject('${proj.name}')" style="background:#fee; padding:5px 10px; border:none; border-radius:8px; cursor:pointer;">🗑️</button>
+                        <button onclick="deleteProject('${proj.name}')" style="background:rgba(220,53,69,0.15); color:#ff6b6b; padding:4px 10px; border:none; border-radius:6px; cursor:pointer;">🗑️</button>
                     </div>
                 `).join('');
             }
@@ -2501,7 +2428,7 @@ async function loadData() {
                             <span class="subtask-title-text ${child.done ? 'completed' : ''}">${escapeHtml(child.title)}</span>
                             <div class="subtask-actions">
                                 <button onclick="openEditModal('${child.id}')"><i class="fas fa-edit"></i></button>
-                                <button onclick="deleteTask('${child.id}')"><i class="fas fa-trash" style="color:#dc3545;"></i></button>
+                                <button onclick="deleteTask('${child.id}')"><i class="fas fa-trash" style="color:#ff6b6b;"></i></button>
                             </div>
                         </div>
                     `).join('')}
@@ -2900,10 +2827,10 @@ async function loadData() {
             let percent = total > 0 ? Math.round((completed / total) * 100) : 0;
             
             document.getElementById('projectPageStats').innerHTML = `
-                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #2d6a4f;">${toPersianNumbers(total)}</div><div>کل تسک‌ها</div></div>
-                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #2d6a4f;">${toPersianNumbers(completed)}</div><div>انجام شده</div></div>
-                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #2d6a4f;">${toPersianNumbers(pending)}</div><div>در انتظار</div></div>
-                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #2d6a4f;">${toPersianNumbers(percent)}%</div><div>پیشرفت</div></div>
+                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #43e97b;">${toPersianNumbers(total)}</div><div>کل تسک‌ها</div></div>
+                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #43e97b;">${toPersianNumbers(completed)}</div><div>انجام شده</div></div>
+                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #f5576c;">${toPersianNumbers(pending)}</div><div>در انتظار</div></div>
+                <div class="project-stat-card"><div style="font-size: 22px; font-weight: bold; color: #667eea;">${toPersianNumbers(percent)}%</div><div>پیشرفت</div></div>
             `;
             
             if (projectTasks.length === 0) {
@@ -2921,7 +2848,7 @@ async function loadData() {
                                 </div>
                                 <div class="task-meta">
                                     <i class="far fa-calendar-alt"></i> ${formatDate(task.date)} - ${formatTimeToPersian(task.time)}
-                                    <span style="background: #f0e6ff; color: #7b2cbf; padding: 2px 6px; border-radius: 10px; margin-right: 8px;"><i class="fas fa-tag"></i> ${task.category}</span>
+                                    <span style="background: rgba(245,87,108,0.15); color:#f5576c; padding: 2px 6px; border-radius: 10px; margin-right: 8px;"><i class="fas fa-tag"></i> ${task.category}</span>
                                     ${task.parent_id ? `<span style="background: var(--badge-bg); color: var(--badge-color); padding: 2px 6px; border-radius: 10px;"><i class="fas fa-sitemap"></i> زیرتسک</span>` : ''}
                                     ${task.description ? `<span style="color: var(--text-light); margin-right: 8px;"><i class="fas fa-align-left"></i> ${escapeHtml(task.description.substring(0, 30))}${task.description.length > 30 ? '...' : ''}</span>` : ''}
                                     ${progressText}
@@ -3070,36 +2997,15 @@ async function loadData() {
             }
         }
         
-        function openMobileMenu() {
-            document.getElementById('mobileMenu').classList.add('open');
-            document.getElementById('mobileMenuOverlay').classList.add('active');
-            document.getElementById('hamburgerBtn').classList.add('active');
-            document.body.style.overflow = 'hidden';
-        }
-        
-        function closeMobileMenu() {
-            document.getElementById('mobileMenu').classList.remove('open');
-            document.getElementById('mobileMenuOverlay').classList.remove('active');
-            document.getElementById('hamburgerBtn').classList.remove('active');
-            document.body.style.overflow = '';
-        }
-        
         // ===== Event Listeners =====
-        document.getElementById('hamburgerBtn')?.addEventListener('click', function() {
-            if (document.getElementById('mobileMenu').classList.contains('open')) closeMobileMenu();
-            else openMobileMenu();
-        });
-        document.getElementById('mobileMenuOverlay')?.addEventListener('click', closeMobileMenu);
-        
-        document.getElementById('changePasswordBtn')?.addEventListener('click', changePassword);
-        document.getElementById('exportCsvBtn')?.addEventListener('click', exportCSV);
-        document.getElementById('applyDateRangeBtn')?.addEventListener('click', applyDateRange);
-        
         document.getElementById('openAddTaskBtn')?.addEventListener('click', openAddTaskModal);
         document.getElementById('saveAddTaskBtn')?.addEventListener('click', addNewTask);
         document.getElementById('addCategoryBtn')?.addEventListener('click', addCategory);
         document.getElementById('addProjectBtn')?.addEventListener('click', addProject);
         document.getElementById('editProjectDescBtn')?.addEventListener('click', editProjectDescription);
+        document.getElementById('exportCsvBtn')?.addEventListener('click', exportCSV);
+        document.getElementById('applyDateRangeBtn')?.addEventListener('click', applyDateRange);
+        document.getElementById('changePasswordBtn')?.addEventListener('click', changePassword);
         
         document.getElementById('gridViewBtn')?.addEventListener('click', () => setView('grid'));
         document.getElementById('listViewBtn')?.addEventListener('click', () => setView('list'));
