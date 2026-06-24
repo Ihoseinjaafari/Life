@@ -1,5 +1,5 @@
 <?php
-// lifeplan/index.php - لایف‌پلن با ساختار گروه‌بندی جدید و خروجی PDF
+// lifeplan/index.php - لایف‌پلن با ساختار گروه‌بندی و ویرایش
 session_start();
 date_default_timezone_set('Asia/Tehran');
 
@@ -39,7 +39,6 @@ $tasksFile = __DIR__ . '/../data/tasks.json';
 $categoriesFile = __DIR__ . '/../data/categories.json';
 $projectsFile = __DIR__ . '/../data/projects.json';
 
-// ایجاد فایل دیتا در صورت عدم وجود
 if (!file_exists($lifeplanFile)) {
     file_put_contents($lifeplanFile, json_encode([]));
 }
@@ -251,6 +250,7 @@ $groups = getLifePlanGroups($userId);
 $categories = getCategories();
 $projects = getUserProjects($userId);
 $currentDate = date('Y-m-d');
+$pageTitle = 'لایف‌پلن';
 ?>
 
 <!DOCTYPE html>
@@ -265,7 +265,7 @@ $currentDate = date('Y-m-d');
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        /* ===== استایل یکسان با صفحه اصلی ===== */
+        /* ===== متغیرهای CSS برای تم ===== */
         :root {
             --bg-primary: #0f0c29;
             --bg-secondary: #302b63;
@@ -285,23 +285,118 @@ $currentDate = date('Y-m-d');
             --toast-bg: #1a1a2e;
             --badge-bg: rgba(102,126,234,0.15);
             --badge-color: #667eea;
+            --body-bg: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            --header-bg: rgba(255,255,255,0.05);
+            --card-bg: rgba(255,255,255,0.05);
+            --card-border: rgba(255,255,255,0.08);
+            --input-bg: rgba(255,255,255,0.05);
+            --modal-bg: #1a1a2e;
+            --modal-border: rgba(255,255,255,0.08);
+            --toast-bg-color: #1a1a2e;
+            --empty-color: rgba(255,255,255,0.2);
+            --pdf-bg: #0f0c29;
+            --group-bg: rgba(255,255,255,0.05);
+            --group-border: rgba(255,255,255,0.08);
+            --group-header-bg: rgba(255,255,255,0.03);
+            --item-bg: rgba(255,255,255,0.03);
+            --item-border: rgba(255,255,255,0.06);
+            --item-hover-bg: rgba(255,255,255,0.05);
+            --group-title-color: #ffffff;
+            --card-title-color: #ffffff;
+            --card-content-color: rgba(255,255,255,0.8);
+            --section-bg: rgba(255,255,255,0.05);
+            --section-border: rgba(255,255,255,0.08);
+        }
+
+        /* ===== تم روشن ===== */
+        body.light-mode {
+            --bg-primary: #f0f2f5;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f8f9fa;
+            --bg-input: #fafafa;
+            --bg-input-hover: #ffffff;
+            --text-primary: #1a1a2e;
+            --text-secondary: #333333;
+            --text-muted: #6c757d;
+            --text-light: #999999;
+            --border-color: #e8e8e8;
+            --border-card: #f0f0f0;
+            --shadow-color: rgba(0,0,0,0.08);
+            --shadow-hover: rgba(0,0,0,0.15);
+            --modal-overlay: rgba(0,0,0,0.5);
+            --toast-bg: #1a1a2e;
+            --badge-bg: #e7f3ff;
+            --badge-color: #0066cc;
+            --body-bg: #f0f2f5;
+            --header-bg: #ffffff;
+            --card-bg: #ffffff;
+            --card-border: #e8e8e8;
+            --input-bg: #fafafa;
+            --modal-bg: #ffffff;
+            --modal-border: #e8e8e8;
+            --toast-bg-color: #1a1a2e;
+            --empty-color: #999999;
+            --pdf-bg: #f0f2f5;
+            --group-bg: #ffffff;
+            --group-border: #e8e8e8;
+            --group-header-bg: #f8f9fa;
+            --item-bg: #fafafa;
+            --item-border: #f0f0f0;
+            --item-hover-bg: #f8f9fa;
+            --group-title-color: #1a1a2e;
+            --card-title-color: #1a1a2e;
+            --card-content-color: #333333;
+            --section-bg: #ffffff;
+            --section-border: #e8e8e8;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: 'Vazirmatn', 'Vazir', 'Tahoma', sans-serif !important;
-            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            background: var(--body-bg);
             min-height: 100vh;
             padding: 20px;
             color: var(--text-primary);
+            transition: background 0.3s ease, color 0.3s ease;
         }
 
         .container { max-width: 1200px; margin: 0 auto; }
         
+        /* ===== دکمه تغییر تم ===== */
+        .theme-toggle-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .theme-toggle-btn:hover {
+            background: rgba(255,255,255,0.15);
+            transform: scale(1.05);
+        }
+        
+        body.light-mode .theme-toggle-btn {
+            background: rgba(0,0,0,0.05);
+            color: #333;
+        }
+        
+        body.light-mode .theme-toggle-btn:hover {
+            background: rgba(0,0,0,0.1);
+        }
+        
         /* ===== هدر ===== */
         .lifeplan-header {
-            background: var(--bg-card);
+            background: var(--header-bg);
             backdrop-filter: blur(10px);
             border-radius: 20px;
             padding: 20px 30px;
@@ -312,6 +407,7 @@ $currentDate = date('Y-m-d');
             align-items: center;
             flex-wrap: wrap;
             gap: 15px;
+            transition: background 0.3s ease, border-color 0.3s ease;
         }
         
         .lifeplan-header h1 {
@@ -321,6 +417,7 @@ $currentDate = date('Y-m-d');
             display: flex;
             align-items: center;
             gap: 12px;
+            transition: color 0.3s ease;
         }
         
         .lifeplan-header h1 i { color: #f5576c; }
@@ -329,10 +426,11 @@ $currentDate = date('Y-m-d');
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
+            align-items: center;
         }
         
         .btn-back {
-            background: rgba(255,255,255,0.05);
+            background: var(--bg-input);
             color: var(--text-secondary);
             border: 1px solid var(--border-color);
             padding: 8px 18px;
@@ -348,7 +446,7 @@ $currentDate = date('Y-m-d');
         }
         
         .btn-back:hover {
-            background: rgba(255,255,255,0.1);
+            background: var(--bg-card-hover);
             border-color: #667eea;
         }
         
@@ -422,6 +520,102 @@ $currentDate = date('Y-m-d');
             transform: none !important;
         }
         
+        .btn-edit-toggle {
+            background: linear-gradient(135deg, #f59e0b, #f97316);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-edit-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(245,158,11,0.4);
+        }
+        
+        .btn-edit-toggle.active {
+            background: linear-gradient(135deg, #28a745, #20c997);
+        }
+        
+        .btn-edit-toggle.active:hover {
+            box-shadow: 0 5px 20px rgba(40,167,69,0.4);
+        }
+        
+        /* ===== عنوان ثابت و قابل ویرایش ===== */
+        .lifeplan-title-section {
+            background: var(--section-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 25px 30px;
+            margin-bottom: 25px;
+            border: 1px solid var(--section-border);
+            text-align: center;
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+        
+        .lifeplan-title-section .main-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: color 0.3s ease;
+            padding: 5px 15px;
+            border-radius: 10px;
+            display: inline-block;
+            position: relative;
+        }
+        
+        .lifeplan-title-section .main-title:hover {
+            background: var(--bg-input);
+        }
+        
+        .lifeplan-title-section .main-title .edit-hint {
+            font-size: 12px;
+            color: var(--text-light);
+            font-weight: 400;
+            margin-right: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .lifeplan-title-section .main-title:hover .edit-hint {
+            opacity: 1;
+        }
+        
+        .lifeplan-title-section .main-title-input {
+            display: none;
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            background: var(--bg-input);
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 5px 15px;
+            text-align: center;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            font-family: inherit;
+        }
+        
+        .lifeplan-title-section .main-title-input:focus {
+            outline: none;
+        }
+        
+        .lifeplan-title-section .sub-title {
+            font-size: 16px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        
         /* ===== گروه‌ها ===== */
         .groups-container {
             display: flex;
@@ -430,15 +624,15 @@ $currentDate = date('Y-m-d');
         }
         
         .group-card {
-            background: var(--bg-card);
+            background: var(--group-bg);
             border-radius: 20px;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--group-border);
             overflow: hidden;
             transition: all 0.3s ease;
         }
         
         .group-card:hover {
-            border-color: rgba(255,255,255,0.15);
+            border-color: rgba(102,126,234,0.3);
         }
         
         .group-header {
@@ -446,8 +640,8 @@ $currentDate = date('Y-m-d');
             justify-content: space-between;
             align-items: center;
             padding: 16px 24px;
-            background: rgba(255,255,255,0.03);
-            border-bottom: 1px solid var(--border-color);
+            background: var(--group-header-bg);
+            border-bottom: 1px solid var(--group-border);
             cursor: grab;
         }
         
@@ -461,8 +655,9 @@ $currentDate = date('Y-m-d');
         .group-header .group-title {
             font-size: 18px;
             font-weight: 700;
-            color: var(--text-primary);
+            color: var(--group-title-color);
             flex: 1;
+            transition: color 0.3s ease;
         }
         
         .group-header .group-actions {
@@ -479,6 +674,11 @@ $currentDate = date('Y-m-d');
             border-radius: 6px;
             transition: all 0.3s;
             font-size: 14px;
+            display: none;
+        }
+        
+        .group-header .group-actions button.visible {
+            display: inline-flex;
         }
         
         .group-header .group-actions .edit-group-btn:hover {
@@ -514,33 +714,34 @@ $currentDate = date('Y-m-d');
         }
         
         .card-item {
-            background: rgba(255,255,255,0.03);
+            background: var(--item-bg);
             border-radius: 14px;
             padding: 18px 20px;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--item-border);
             transition: all 0.3s ease;
             position: relative;
         }
         
         .card-item:hover {
-            border-color: rgba(255,255,255,0.15);
-            background: rgba(255,255,255,0.05);
+            border-color: rgba(102,126,234,0.3);
+            background: var(--item-hover-bg);
         }
         
         .card-item .card-title {
             font-size: 16px;
             font-weight: 600;
-            color: var(--text-primary);
+            color: var(--card-title-color);
             margin-bottom: 6px;
-            padding-left: 60px;
+            transition: color 0.3s ease;
         }
         
         .card-item .card-content {
             font-size: 14px;
-            color: var(--text-secondary);
+            color: var(--card-content-color);
             line-height: 1.7;
             white-space: pre-wrap;
             word-break: break-word;
+            transition: color 0.3s ease;
         }
         
         .card-item .card-content:empty::before {
@@ -554,7 +755,7 @@ $currentDate = date('Y-m-d');
             gap: 4px;
             position: absolute;
             top: 14px;
-            right: 14px;
+            left: 14px;
         }
         
         .card-item .card-actions button {
@@ -566,6 +767,11 @@ $currentDate = date('Y-m-d');
             border-radius: 6px;
             transition: all 0.3s;
             font-size: 13px;
+            display: none;
+        }
+        
+        .card-item .card-actions button.visible {
+            display: inline-flex;
         }
         
         .card-item .card-actions .edit-card-btn:hover {
@@ -592,7 +798,7 @@ $currentDate = date('Y-m-d');
         
         .empty-state .icon {
             font-size: 48px;
-            color: rgba(255,255,255,0.05);
+            color: var(--empty-color);
             margin-bottom: 16px;
             display: block;
         }
@@ -614,14 +820,15 @@ $currentDate = date('Y-m-d');
         .modal.show { display: flex; }
         
         .modal-content {
-            background: #1a1a2e;
-            border: 1px solid rgba(255,255,255,0.08);
+            background: var(--modal-bg);
+            border: 1px solid var(--modal-border);
             border-radius: 25px;
             padding: 30px;
             max-width: 550px;
             width: 90%;
             max-height: 90vh;
             overflow-y: auto;
+            transition: background 0.3s ease, border-color 0.3s ease;
         }
         
         .modal-header {
@@ -642,11 +849,11 @@ $currentDate = date('Y-m-d');
             width: 100%;
             padding: 12px 15px;
             margin-bottom: 15px;
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid var(--border-color);
             border-radius: 12px;
             font-size: 14px;
             font-family: inherit;
-            background: rgba(255,255,255,0.03);
+            background: var(--input-bg);
             color: var(--text-primary);
             transition: all 0.3s;
         }
@@ -656,7 +863,7 @@ $currentDate = date('Y-m-d');
         .modal-body textarea:focus {
             outline: none;
             border-color: #667eea;
-            background: rgba(255,255,255,0.06);
+            background: var(--bg-input-hover);
         }
         
         .modal-body textarea { resize: vertical; min-height: 80px; }
@@ -668,7 +875,7 @@ $currentDate = date('Y-m-d');
         }
         
         .btn-cancel {
-            background: rgba(255,255,255,0.05);
+            background: var(--bg-input);
             color: var(--text-secondary);
             border: 1px solid var(--border-color);
             padding: 12px 25px;
@@ -680,7 +887,7 @@ $currentDate = date('Y-m-d');
             transition: all 0.3s;
         }
         
-        .btn-cancel:hover { background: rgba(255,255,255,0.1); }
+        .btn-cancel:hover { background: var(--bg-card-hover); }
         
         .btn-save {
             background: linear-gradient(135deg, #667eea, #764ba2);
@@ -723,7 +930,7 @@ $currentDate = date('Y-m-d');
             bottom: 30px;
             left: 50%;
             transform: translateX(-50%) translateY(100px);
-            background: var(--toast-bg);
+            background: var(--toast-bg-color);
             color: white;
             padding: 12px 25px;
             border-radius: 12px;
@@ -741,14 +948,10 @@ $currentDate = date('Y-m-d');
         .toast.success { background: #28a745; }
         .toast.error { background: #dc3545; }
         
-        /* ===== استایل PDF (مخفی در صفحه) ===== */
+        /* ===== استایل PDF ===== */
         #pdfContent {
             background: transparent;
             padding: 20px;
-        }
-        
-        .pdf-only {
-            display: none !important;
         }
         
         /* ===== ریسپانسیو ===== */
@@ -760,11 +963,20 @@ $currentDate = date('Y-m-d');
             .group-header { flex-wrap: wrap; gap: 10px; }
             .group-header .group-title { font-size: 16px; }
             .modal-content { padding: 20px; }
+            .lifeplan-title-section .main-title { font-size: 24px; }
+            .lifeplan-title-section .main-title-input { font-size: 24px; }
         }
         
         @media (max-width: 480px) {
-            .card-item .card-title { font-size: 14px; padding-left: 50px; }
+            .card-item .card-title { font-size: 14px; }
             .card-item .card-content { font-size: 13px; }
+            .lifeplan-title-section .main-title { font-size: 20px; }
+            .lifeplan-title-section .main-title-input { font-size: 20px; }
+            .card-item .card-actions {
+                position: static;
+                margin-top: 10px;
+                justify-content: flex-start;
+            }
         }
     </style>
 </head>
@@ -780,7 +992,23 @@ $currentDate = date('Y-m-d');
                 <button class="btn-pdf" id="pdfBtn" onclick="exportPDF()">
                     <i class="fas fa-file-pdf"></i> خروجی PDF
                 </button>
+                <button class="btn-edit-toggle" id="editToggleBtn" onclick="toggleEditMode()">
+                    <i class="fas fa-pen"></i> <span id="editToggleText">ویرایش</span>
+                </button>
+                <button class="theme-toggle-btn" onclick="toggleTheme()" title="تغییر تم">
+                    <i class="fas fa-moon" id="themeIcon"></i>
+                </button>
             </div>
+        </div>
+        
+        <!-- ===== عنوان ثابت و قابل ویرایش ===== -->
+        <div class="lifeplan-title-section">
+            <div id="titleDisplay" class="main-title" onclick="editTitle()">
+                <?php echo htmlspecialchars($pageTitle); ?>
+                <span class="edit-hint"><i class="fas fa-pen"></i> ویرایش</span>
+            </div>
+            <input type="text" id="titleInput" class="main-title-input" value="<?php echo htmlspecialchars($pageTitle); ?>" maxlength="100">
+            <div class="sub-title">برنامه‌ریزی اهداف بلندمدت و مسیر زندگی</div>
         </div>
         
         <!-- ===== محتوای اصلی ===== -->
@@ -874,6 +1102,84 @@ $currentDate = date('Y-m-d');
     let sortableInstances = {};
     let groupEditId = null;
     let cardEditId = null;
+    let pageTitle = '<?php echo htmlspecialchars($pageTitle); ?>';
+    let editMode = false;
+
+    // ===== مدیریت تم =====
+    function toggleTheme() {
+        const body = document.body;
+        body.classList.toggle('light-mode');
+        const isLight = body.classList.contains('light-mode');
+        localStorage.setItem('lifeplanTheme', isLight ? 'light' : 'dark');
+        updateThemeIcon();
+    }
+
+    function updateThemeIcon() {
+        const isLight = document.body.classList.contains('light-mode');
+        const icon = document.getElementById('themeIcon');
+        if (icon) {
+            icon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
+        }
+    }
+
+    function loadTheme() {
+        const savedTheme = localStorage.getItem('lifeplanTheme');
+        if (savedTheme === 'light') {
+            document.body.classList.add('light-mode');
+        } else {
+            document.body.classList.remove('light-mode');
+        }
+        updateThemeIcon();
+    }
+
+    // ===== مدیریت ویرایش =====
+    function toggleEditMode() {
+        editMode = !editMode;
+        const btn = document.getElementById('editToggleBtn');
+        const text = document.getElementById('editToggleText');
+        if (editMode) {
+            btn.classList.add('active');
+            text.textContent = 'غیرفعال‌سازی ویرایش';
+        } else {
+            btn.classList.remove('active');
+            text.textContent = 'ویرایش';
+        }
+        renderGroups();
+    }
+
+    // ===== مدیریت عنوان =====
+    function editTitle() {
+        if (!editMode) return;
+        const display = document.getElementById('titleDisplay');
+        const input = document.getElementById('titleInput');
+        display.style.display = 'none';
+        input.style.display = 'block';
+        input.value = pageTitle;
+        input.focus();
+        input.select();
+    }
+
+    function saveTitle() {
+        const display = document.getElementById('titleDisplay');
+        const input = document.getElementById('titleInput');
+        const newTitle = input.value.trim() || 'لایف‌پلن';
+        pageTitle = newTitle;
+        display.textContent = newTitle;
+        display.innerHTML = newTitle + ' <span class="edit-hint"><i class="fas fa-pen"></i> ویرایش</span>';
+        display.style.display = 'inline-block';
+        input.style.display = 'none';
+        localStorage.setItem('lifeplanTitle', newTitle);
+    }
+
+    function loadTitle() {
+        const savedTitle = localStorage.getItem('lifeplanTitle');
+        if (savedTitle) {
+            pageTitle = savedTitle;
+            const display = document.getElementById('titleDisplay');
+            display.innerHTML = savedTitle + ' <span class="edit-hint"><i class="fas fa-pen"></i> ویرایش</span>';
+            document.getElementById('titleInput').value = savedTitle;
+        }
+    }
 
     // ===== توابع کمکی =====
     function showToast(message, type = 'success') {
@@ -930,13 +1236,13 @@ $currentDate = date('Y-m-d');
                         <span class="group-title">${escapeHtml(group.title)}</span>
                     </div>
                     <div class="group-actions">
-                        <button class="add-card-btn" onclick="openAddCardModal('${group.id}')" title="افزودن کارت">
+                        <button class="add-card-btn ${editMode ? 'visible' : ''}" onclick="openAddCardModal('${group.id}')" title="افزودن کارت">
                             <i class="fas fa-plus"></i>
                         </button>
-                        <button class="edit-group-btn" onclick="openEditGroupModal('${group.id}')" title="ویرایش گروه">
+                        <button class="edit-group-btn ${editMode ? 'visible' : ''}" onclick="openEditGroupModal('${group.id}')" title="ویرایش گروه">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="delete-group-btn" onclick="deleteGroup('${group.id}')" title="حذف گروه">
+                        <button class="delete-group-btn ${editMode ? 'visible' : ''}" onclick="deleteGroup('${group.id}')" title="حذف گروه">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -947,13 +1253,13 @@ $currentDate = date('Y-m-d');
                         group.cards.map(card => `
                             <div class="card-item" data-id="${card.id}">
                                 <div class="card-actions">
-                                    <button class="convert-card-btn" onclick="openConvertModal('${card.id}')" title="تبدیل به تسک">
+                                    <button class="convert-card-btn ${editMode ? 'visible' : ''}" onclick="openConvertModal('${card.id}')" title="تبدیل به تسک">
                                         <i class="fas fa-exchange-alt"></i>
                                     </button>
-                                    <button class="edit-card-btn" onclick="openEditCardModal('${group.id}', '${card.id}')" title="ویرایش کارت">
+                                    <button class="edit-card-btn ${editMode ? 'visible' : ''}" onclick="openEditCardModal('${group.id}', '${card.id}')" title="ویرایش کارت">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="delete-card-btn" onclick="deleteCard('${group.id}', '${card.id}')" title="حذف کارت">
+                                    <button class="delete-card-btn ${editMode ? 'visible' : ''}" onclick="deleteCard('${group.id}', '${card.id}')" title="حذف کارت">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -1253,33 +1559,36 @@ $currentDate = date('Y-m-d');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال تولید...';
         
         try {
-            // 1. مخفی کردن دکمه‌های اکشن
+            // مخفی کردن دکمه‌های اکشن
             document.querySelectorAll('.group-actions, .card-actions, .drag-handle, .add-card-btn, .edit-group-btn, .delete-group-btn, .edit-card-btn, .delete-card-btn, .convert-card-btn').forEach(el => {
                 el.style.display = 'none';
             });
             
-            // 2. مخفی کردن دکمه‌های هدر (به جز دکمه PDF)
-            document.querySelectorAll('.header-actions .btn-add-group, .header-actions .btn-planner, .header-actions .btn-back').forEach(el => {
+            // مخفی کردن دکمه‌های هدر (به جز دکمه PDF)
+            document.querySelectorAll('.header-actions .btn-add-group, .header-actions .btn-planner, .header-actions .btn-back, .header-actions .theme-toggle-btn, .header-actions .btn-edit-toggle').forEach(el => {
                 el.style.display = 'none';
             });
             
-            // 3. تغییر رنگ پس‌زمینه کارت‌ها برای PDF
+            // تغییر رنگ پس‌زمینه برای PDF
+            const isLightMode = document.body.classList.contains('light-mode');
+            const bgColor = isLightMode ? '#f0f2f5' : '#0f0c29';
+            
             document.querySelectorAll('.group-card').forEach(el => {
-                el.style.background = 'rgba(255,255,255,0.05)';
-                el.style.border = '1px solid rgba(255,255,255,0.1)';
+                el.style.background = isLightMode ? '#ffffff' : 'rgba(255,255,255,0.05)';
+                el.style.border = isLightMode ? '1px solid #e8e8e8' : '1px solid rgba(255,255,255,0.1)';
             });
             
             document.querySelectorAll('.card-item').forEach(el => {
-                el.style.background = 'rgba(255,255,255,0.03)';
-                el.style.border = '1px solid rgba(255,255,255,0.06)';
+                el.style.background = isLightMode ? '#fafafa' : 'rgba(255,255,255,0.03)';
+                el.style.border = isLightMode ? '1px solid #f0f0f0' : '1px solid rgba(255,255,255,0.06)';
             });
             
-            // 4. گرفتن اسکرین‌شات با html2canvas
+            // گرفتن اسکرین‌شات
             const element = document.getElementById('pdfContent');
             const canvas = await html2canvas(element, {
                 scale: 2,
                 useCORS: true,
-                backgroundColor: '#0f0c29',
+                backgroundColor: bgColor,
                 logging: false,
                 width: element.scrollWidth,
                 height: element.scrollHeight,
@@ -1287,7 +1596,7 @@ $currentDate = date('Y-m-d');
                 windowHeight: element.scrollHeight
             });
             
-            // 5. ایجاد PDF با jsPDF
+            // ایجاد PDF با jsPDF
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'mm', 'a4');
@@ -1295,30 +1604,49 @@ $currentDate = date('Y-m-d');
             const pdfWidth = 210;
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             
-            let heightLeft = pdfHeight;
-            let position = 0;
-            
-            // صفحه اول
-            pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-            heightLeft -= pdfHeight;
-            
-            // صفحات بعدی (اگر محتوا بیشتر از یک صفحه بود)
-            while (heightLeft > 0) {
-                position = heightLeft - pdfHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-                heightLeft -= pdfHeight;
+            if (pdfHeight <= 297) {
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+            } else {
+                let heightLeft = pdfHeight;
+                let position = 0;
+                let pageNum = 1;
+                
+                while (heightLeft > 0) {
+                    if (pageNum > 1) {
+                        pdf.addPage();
+                    }
+                    
+                    const pageCanvas = document.createElement('canvas');
+                    const pageCtx = pageCanvas.getContext('2d');
+                    const cropHeight = Math.min(heightLeft, 297);
+                    pageCanvas.width = canvas.width;
+                    pageCanvas.height = cropHeight * (canvas.width / pdfWidth);
+                    
+                    pageCtx.drawImage(
+                        canvas,
+                        0, position * (canvas.width / pdfWidth),
+                        canvas.width, cropHeight * (canvas.width / pdfWidth),
+                        0, 0,
+                        canvas.width, cropHeight * (canvas.width / pdfWidth)
+                    );
+                    
+                    const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
+                    pdf.addImage(pageImgData, 'JPEG', 0, 0, pdfWidth, cropHeight);
+                    
+                    heightLeft -= 297;
+                    position += 297;
+                    pageNum++;
+                }
             }
             
-            // 6. ذخیره PDF
             const date = new Date().toISOString().split('T')[0];
             pdf.save(`LifePlan_${date}.pdf`);
             
-            // 7. بازیابی حالت
+            // بازیابی حالت
             document.querySelectorAll('.group-actions, .card-actions, .drag-handle, .add-card-btn, .edit-group-btn, .delete-group-btn, .edit-card-btn, .delete-card-btn, .convert-card-btn').forEach(el => {
                 el.style.display = '';
             });
-            document.querySelectorAll('.header-actions .btn-add-group, .header-actions .btn-planner, .header-actions .btn-back').forEach(el => {
+            document.querySelectorAll('.header-actions .btn-add-group, .header-actions .btn-planner, .header-actions .btn-back, .header-actions .theme-toggle-btn, .header-actions .btn-edit-toggle').forEach(el => {
                 el.style.display = '';
             });
             document.querySelectorAll('.group-card').forEach(el => {
@@ -1335,11 +1663,10 @@ $currentDate = date('Y-m-d');
             console.error(e);
             showToast('خطا در تولید PDF', 'error');
             
-            // بازیابی حالت در صورت خطا
             document.querySelectorAll('.group-actions, .card-actions, .drag-handle, .add-card-btn, .edit-group-btn, .delete-group-btn, .edit-card-btn, .delete-card-btn, .convert-card-btn').forEach(el => {
                 el.style.display = '';
             });
-            document.querySelectorAll('.header-actions .btn-add-group, .header-actions .btn-planner, .header-actions .btn-back').forEach(el => {
+            document.querySelectorAll('.header-actions .btn-add-group, .header-actions .btn-planner, .header-actions .btn-back, .header-actions .theme-toggle-btn, .header-actions .btn-edit-toggle').forEach(el => {
                 el.style.display = '';
             });
             document.querySelectorAll('.group-card').forEach(el => {
@@ -1359,6 +1686,20 @@ $currentDate = date('Y-m-d');
     // ===== Event Listeners =====
     document.getElementById('saveGroupBtn').addEventListener('click', saveGroup);
     document.getElementById('saveCardBtn').addEventListener('click', saveCard);
+    
+    document.getElementById('titleInput').addEventListener('blur', saveTitle);
+    document.getElementById('titleInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveTitle();
+        }
+        if (e.key === 'Escape') {
+            const display = document.getElementById('titleDisplay');
+            const input = document.getElementById('titleInput');
+            display.style.display = 'inline-block';
+            input.style.display = 'none';
+        }
+    });
     
     document.getElementById('groupModal').addEventListener('click', function(e) {
         if (e.target === this) closeGroupModal();
@@ -1397,6 +1738,8 @@ $currentDate = date('Y-m-d');
     });
 
     // ===== شروع =====
+    loadTheme();
+    loadTitle();
     loadGroups();
     </script>
 </body>
